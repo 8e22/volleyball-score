@@ -143,7 +143,7 @@
   }
   /* 集計テーブルのスタイル */
   #exportTable {
-      min-width: 900px; /* ★変更点: テーブルの最小幅を設定 */
+      min-width: 900px;
       border-collapse: collapse;
       font-size: 13px;
       background: white;
@@ -358,7 +358,7 @@
   // --- ヘルパー関数 ---
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v12'; // バージョンキー更新
+  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v13'; // バージョンキー更新
   
   const save = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -681,7 +681,7 @@
           div.innerHTML = `
             <input type="text" class="edit-player-name player-register-name-input" value="${escapeHtml(p.name)}" data-id="${p.id}" placeholder="名前を入力" inputmode="text" autocomplete="off" />
             <div style="width:140px; font-size:12px; align-self:center; color:${isOnCourt ? '#2a66b9' : '#888'};">
-                ${courtStatus} P: ${p.totalPoints} / E: ${p.totalErrors}
+                ${courtStatus}
             </div>
             <button class="remove-player-btn" data-id="${p.id}" ${isRemovable ? '' : 'disabled'}>削除</button>
           `;
