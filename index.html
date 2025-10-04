@@ -48,7 +48,7 @@
 
   #actions{margin-top:20px;}
   .action-buttons{display:flex;gap:8px;flex-wrap:wrap;}
-  #opponentMiss{background:#e7f7e5;border-color:#b5e8b0;color:#185a1f;}
+  #otherLostPoint{background:#fdeeee;border-color:#f8c5c5;color:#9b2c2c;}
   #otherPoint{background:#fff9e6;border-color:#ffecb3;color:#6d5813;}
   
   #logSection{margin-top:20px;}
@@ -224,7 +224,7 @@
         <button class="action" data-action="チャンス" data-type="DIG_RECEIVE">チャンス</button>
         <button class="action" data-action="ディグ" data-type="DIG_RECEIVE">ディグ</button>
         <button class="action" data-action="二段トス" data-type="SET">二段トス</button>
-        <button id="opponentMiss" class="action" data-action="相手ミス">相手ミス</button>
+        <button id="otherLostPoint" class="action" data-action="その他失点">その他失点</button>
         <button id="otherPoint" class="action" data-action="その他得点">その他得点</button>
       </div>
     </section>
@@ -341,11 +341,11 @@
     return ACTION_CONFIG.POINT_ACTION.results;
   }
   
-  function getScoreChanges(isPoint, isError, isOpponentPoint, isOpponentMissButton, isOtherPointButton) {
+  function getScoreChanges(isPoint, isError, isOtherPointButton) {
       let teamPointChange = 0;
       let opponentPointChange = 0;
 
-      if (isOpponentMissButton || isOtherPointButton) {
+      if (isOtherPointButton) {
           teamPointChange = 1;
       } else if (isPoint) {
           teamPointChange = 1;
@@ -358,7 +358,7 @@
   // --- ヘルパー関数 ---
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v13'; // バージョンキー更新
+  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v14'; // バージョンキー更新
   
   const save = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -465,8 +465,8 @@
       const action = e.currentTarget.dataset.action;
       const type = e.currentTarget.dataset.type;
 
-      if (action === '相手ミス') {
-          recordOpponentMiss();
+      if (action === 'その他失点') {
+          recordOtherLostPoint();
           return;
       }
       if (action === 'その他得点') {
@@ -732,9 +732,8 @@
 
     for (const e of state.log) {
         const isAction = e.type === 'action' || e.type === 'point';
-        const isOpponentMissButton = e.action === '相手ミス'; 
         const isOtherPointButton = e.action === 'その他得点';
-        const scoreChange = isAction ? getScoreChanges(e.isPoint, e.isError, e.isOpponentPoint, isOpponentMissButton, isOtherPointButton) : { teamPointChange: 0, opponentPointChange: 0 };
+        const scoreChange = isAction ? getScoreChanges(e.isPoint, e.isError, isOtherPointButton) : { teamPointChange: 0, opponentPointChange: 0 };
         
         let logText = '';
         let shouldDisplay = true;
@@ -754,12 +753,12 @@
             
             const hasScoreChange = scoreChange.teamPointChange > 0 || scoreChange.opponentPointChange > 0;
             
-            logText = `${name} 【${e.action}】 ${e.result}`;
-            
-            if (isOpponentMissButton) {
-                logText = `${state.opponentName} 【ミス】 ${state.teamName}が得点`;
-            } else if (isOtherPointButton) {
+            if (e.action === 'その他得点') {
                 logText = `【その他得点】 ${state.teamName}が得点`;
+            } else if (e.action === 'その他失点') {
+                logText = `【その他失点】 ${state.opponentName}が得点`;
+            } else {
+                logText = `${name} 【${e.action}】 ${e.result}`;
             }
 
             if (hasScoreChange) {
@@ -816,19 +815,18 @@
 
   // --- スコア・アクション記録 ---
   
-  function recordOpponentMiss() {
+  function recordOtherLostPoint() {
       state.log.push({ 
           time: Date.now(), 
           type: 'point', 
           playerId: null, 
-          action: '相手ミス', 
-          result: state.teamName + 'が得点', 
-          isPoint: true, 
-          isError: false,
-          isOpponentPoint: false
+          action: 'その他失点', 
+          result: state.opponentName + 'が得点', 
+          isPoint: false,
+          isError: true,
       });
       
-      state.teamScore += 1; 
+      state.opponentScore += 1; 
       
       save();
       renderPartial();
@@ -843,7 +841,6 @@
           result: state.teamName + 'が得点', 
           isPoint: true, 
           isError: false,
-          isOpponentPoint: false
       });
       
       state.teamScore += 1;
@@ -854,8 +851,7 @@
 
 
   function recordAction(playerId, action, result, isPoint, isError) {
-      const isOpponentPoint = isError; 
-      const scoreChange = getScoreChanges(isPoint, isError, isOpponentPoint, false, false);
+      const scoreChange = getScoreChanges(isPoint, isError, false);
       
       const ev = { 
           time: Date.now(), 
@@ -864,8 +860,7 @@
           action: action, 
           result: result, 
           isPoint: isPoint, 
-          isError: isError,
-          isOpponentPoint: isOpponentPoint
+          isError: isError
       };
       
       state.log.push(ev);
@@ -892,18 +887,15 @@
     state.opponentScore = 0;
 
     for (const e of state.log) {
-      const isOpponentMissButton = e.action === '相手ミス';
       const isOtherPointButton = e.action === 'その他得点';
-      const scoreChange = getScoreChanges(e.isPoint, e.isError, e.isOpponentPoint, isOpponentMissButton, isOtherPointButton);
+      const scoreChange = getScoreChanges(e.isPoint, e.isError, isOtherPointButton);
 
-      if (e.type === 'action') {
-        if (e.playerId) { 
-            const p = getPlayerById(e.playerId);
-            if (p) {
-                if (e.isPoint) p.totalPoints += 1;
-                if (e.isError) p.totalErrors += 1;
-            }
-        }
+      if (e.type === 'action' && e.playerId) {
+          const p = getPlayerById(e.playerId);
+          if (p) {
+              if (e.isPoint) p.totalPoints += 1;
+              if (e.isError) p.totalErrors += 1;
+          }
       } 
       
       state.teamScore += scoreChange.teamPointChange;
@@ -927,8 +919,8 @@
           });
       }
       
-      actionDetails.push('相手ミス');
-      allActionResults['相手ミス'] = new Set([state.teamName + 'が得点']);
+      // actionDetails.push('相手ミス'); // This action is removed
+      // allActionResults['相手ミス'] = new Set([state.teamName + 'が得点']);
 
       const tally = new Map(); 
 
@@ -963,7 +955,7 @@
       return { 
           tallyData: Array.from(tally.values()), 
           actionResultsMap: allActionResults,
-          actionCategories: actionDetails.filter(a => a !== '相手ミス')
+          actionCategories: actionDetails
       };
   }
 
@@ -971,7 +963,7 @@
       const table = $('#exportTable');
       const { tallyData, actionResultsMap, actionCategories } = tallyActionsByPlayer();
       
-      if (tallyData.length === 0 && state.log.filter(e => e.type === 'action' || e.action === '相手ミス').length === 0) {
+      if (tallyData.length === 0 && state.log.length === 0) {
           table.innerHTML = `<caption>選手別アクション集計</caption><tr><td>ログにアクション記録がありません。</td></tr>`;
           return;
       }
@@ -980,7 +972,7 @@
       let subHeader = '<tr>';
 
       actionCategories.forEach(action => {
-          const results = Array.from(actionResultsMap[action] || []).filter(r => r !== state.teamName + 'が得点');
+          const results = Array.from(actionResultsMap[action] || []);
           if (results.length > 0) {
               html += `<th colspan="${results.length}">${action}</th>`;
               results.forEach(result => {
@@ -1002,7 +994,7 @@
           let row = `<tr><td>${escapeHtml(pData.name)}</td>`;
           
           actionCategories.forEach(action => {
-              const results = Array.from(actionResultsMap[action] || []).filter(r => r !== state.teamName + 'が得点');
+              const results = Array.from(actionResultsMap[action] || []);
               results.forEach(result => {
                   const count = pData.actions[action] ? (pData.actions[action][result] || 0) : 0;
                   row += `<td>${count || ''}</td>`;
