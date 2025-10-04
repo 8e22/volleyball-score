@@ -284,6 +284,20 @@
       </div>
   </div>
 
+  <div id="memoModal" class="modal hidden" role="dialog">
+      <div class="modal-content">
+          <h3 id="memoModalTitle">メモ入力</h3>
+          <div class="modal-form-row">
+              <label for="memoInput">メモ（任意）:</label>
+              <input type="text" id="memoInput" placeholder="例: セッタードリブル" autocomplete="off" />
+          </div>
+          <div class="modal-actions">
+              <button id="memoModalCancel">キャンセル</button>
+              <button id="memoModalConfirm">確定</button>
+          </div>
+      </div>
+  </div>
+
   <div id="exportModal" class="modal hidden" role="dialog">
       <div class="modal-content">
           <h3 id="exportModalTitle">選手別アクション集計結果 (結果別)</h3>
@@ -302,6 +316,7 @@
   // --- 定数と状態管理 ---
   let nextPlayerId = 8; 
   let currentSubSlotIndex = null; 
+  let currentMemoAction = null;
 
   const state = {
     teamName: '私たち', 
@@ -358,7 +373,7 @@
   // --- ヘルパー関数 ---
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v14'; // バージョンキー更新
+  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v15'; // バージョンキー更新
   
   const save = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -461,16 +476,20 @@
 
   // --- モーダル/交代処理 ---
 
+  function showMemoModal(action) {
+      currentMemoAction = action;
+      $('#memoModalTitle').textContent = `${action} メモ入力`;
+      $('#memoInput').value = '';
+      $('#memoModal').classList.remove('hidden');
+      $('#memoInput').focus();
+  }
+
   function handleActionButton(e) {
       const action = e.currentTarget.dataset.action;
       const type = e.currentTarget.dataset.type;
 
-      if (action === 'その他失点') {
-          recordOtherLostPoint();
-          return;
-      }
-      if (action === 'その他得点') {
-          recordOtherPoint();
+      if (action === 'その他失点' || action === 'その他得点') {
+          showMemoModal(action);
           return;
       }
       
@@ -485,7 +504,6 @@
       actionInput.value = action;
       typeInput.value = type;
 
-      // プレイヤー選択リストの生成 (コート上のプレイヤーのみ)
       playerList.innerHTML = state.onCourtPlayerIds
           .map(id => getPlayerById(id))
           .filter(p => p)
@@ -500,7 +518,6 @@
               `;
           }).join('');
 
-      // 結果選択リストの生成
       const results = getActionResults(action);
       resultList.innerHTML = results.map(r => `
           <label class="choice-label">
@@ -554,7 +571,6 @@
       const subPlayerList = $('#sub-player-select-list');
       subPlayerList.innerHTML = '';
 
-      // コート上にいない選手（交代要員）のみを表示
       const options = state.allPlayers
           .filter(p => !state.onCourtPlayerIds.includes(p.id)) 
           .map(p => `
@@ -580,10 +596,8 @@
       const newPlayerId = Number(selectedInPlayer.value);
       const oldPlayerId = state.onCourtPlayerIds[currentSubSlotIndex];
 
-      // onCourtPlayerIdsを更新
       state.onCourtPlayerIds[currentSubSlotIndex] = newPlayerId;
       
-      // ログ記録
       const newPlayer = getPlayerById(newPlayerId);
       state.log.push({ 
           time: Date.now(), 
@@ -624,7 +638,6 @@
     const container = $('#players');
     container.innerHTML = '';
     
-    // コート上のスロットを描画 (state.onCourtSizeに基づく)
     for(let i=0; i < state.onCourtSize; i++) {
         const playerId = state.onCourtPlayerIds[i];
         const p = getPlayerById(playerId) || { id: 0, name: '未設定', totalPoints: 0, totalErrors: 0 }; 
@@ -656,7 +669,6 @@
     });
   }
   
-  // 選手登録リストの描画
   function renderAllPlayersList() {
       const container = $('#allPlayersList');
       const focusedElement = document.activeElement;
@@ -753,10 +765,8 @@
             
             const hasScoreChange = scoreChange.teamPointChange > 0 || scoreChange.opponentPointChange > 0;
             
-            if (e.action === 'その他得点') {
-                logText = `【その他得点】 ${state.teamName}が得点`;
-            } else if (e.action === 'その他失点') {
-                logText = `【その他失点】 ${state.opponentName}が得点`;
+            if (e.action === 'その他得点' || e.action === 'その他失点') {
+                logText = `【${e.action}】 ${e.result}`;
             } else {
                 logText = `${name} 【${e.action}】 ${e.result}`;
             }
@@ -815,13 +825,16 @@
 
   // --- スコア・アクション記録 ---
   
-  function recordOtherLostPoint() {
+  function recordOtherLostPoint(memo) {
+      let resultText = state.opponentName + 'が得点';
+      if (memo) resultText += ` (${memo})`;
+
       state.log.push({ 
           time: Date.now(), 
           type: 'point', 
           playerId: null, 
           action: 'その他失点', 
-          result: state.opponentName + 'が得点', 
+          result: resultText,
           isPoint: false,
           isError: true,
       });
@@ -832,13 +845,16 @@
       renderPartial();
   }
 
-  function recordOtherPoint() {
+  function recordOtherPoint(memo) {
+      let resultText = state.teamName + 'が得点';
+      if (memo) resultText += ` (${memo})`;
+
       state.log.push({ 
           time: Date.now(), 
           type: 'point', 
           playerId: null, 
           action: 'その他得点', 
-          result: state.teamName + 'が得点', 
+          result: resultText,
           isPoint: true, 
           isError: false,
       });
@@ -919,12 +935,8 @@
           });
       }
       
-      // actionDetails.push('相手ミス'); // This action is removed
-      // allActionResults['相手ミス'] = new Set([state.teamName + 'が得点']);
-
       const tally = new Map(); 
 
-      // すべてのプレイヤーを集計対象とする
       state.allPlayers.forEach(p => {
           tally.set(p.id, { 
               id: p.id,
@@ -939,7 +951,6 @@
           });
       });
 
-      // ログから集計（交代した人の記録もplayerIdで集計）
       state.log.forEach(e => {
           if (e.type === 'action' && e.playerId) {
               const action = e.action;
@@ -1032,7 +1043,6 @@
   function initUI() {
     load();
     
-    // リベロ有無の初期設定とイベントハンドラ
     const liberoSelect = $('#liberoStatus');
     liberoSelect.value = String(state.onCourtSize);
     liberoSelect.onchange = (e) => {
@@ -1059,7 +1069,6 @@
     $('#showExportScreen').onclick = showExportScreen;
     $('#exportModalClose').onclick = () => { $('#exportModal').classList.add('hidden'); };
 
-    // 試合情報コントロール
     $('#opponentName').value = state.opponentName || '相手';
     $('#opponentName').oninput = (e) => { state.opponentName = e.target.value; save(); };
     $('#currentSet').value = state.currentSet || 1;
@@ -1102,6 +1111,19 @@
             renderLog();
         };
     });
+
+    // メモモーダルのイベントリスナー
+    $('#memoModalCancel').onclick = () => { $('#memoModal').classList.add('hidden'); };
+    $('#memoModalConfirm').onclick = () => {
+        const memo = $('#memoInput').value.trim();
+        if (currentMemoAction === 'その他得点') {
+            recordOtherPoint(memo);
+        } else if (currentMemoAction === 'その他失点') {
+            recordOtherLostPoint(memo);
+        }
+        $('#memoModal').classList.add('hidden');
+    };
+
 
     renderAll();
   }
