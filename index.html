@@ -143,8 +143,8 @@
   }
   /* 集計テーブルのスタイル */
   #exportTable {
-      width: 900px; /* ★変更点: テーブル幅を完全に固定 */
-      table-layout: fixed; /* ★変更点: 列幅の計算方法を固定に */
+      width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       font-size: 13px;
       background: white;
@@ -376,7 +376,7 @@
   // --- ヘルパー関数 ---
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v16'; // バージョンキー更新
+  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v18'; // バージョンキー更新
   
   const save = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -641,11 +641,10 @@
     const container = $('#players');
     container.innerHTML = '';
     
+    // ★★★ ここから変更 ★★★
     for(let i=0; i < state.onCourtSize; i++) {
         const playerId = state.onCourtPlayerIds[i];
-        const p = getPlayerById(playerId) || { id: 0, name: '未設定', totalPoints: 0, totalErrors: 0 }; 
-
-        const totalScore = p.totalPoints - p.totalErrors;
+        const p = getPlayerById(playerId) || { id: 0, name: '未設定' }; 
 
         const div = document.createElement('div');
         div.className = 'player';
@@ -657,14 +656,11 @@
 
         div.innerHTML = `
           <h3 title="${displayName} (スロット ${i + 1})">${escapeHtml(displayName)}${slotName}</h3>
-          <div class="player-info">
-            <div>総評価: <span class="score" data-id="${p.id}">${totalScore}</span></div>
-            <button class="sub-btn" data-slot-index="${i}">交代</button>
-          </div>
-          <div style="font-size:12px;opacity:0.8;">得点: ${p.totalPoints} / ミス: ${p.totalErrors}</div>
+          <button class="sub-btn" data-slot-index="${i}">交代</button>
         `;
         container.appendChild(div);
     }
+    // ★★★ ここまで変更 ★★★
 
     $$('.sub-btn').forEach(b => {
       b.removeEventListener('click', handleSubstitution);
