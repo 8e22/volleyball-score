@@ -143,8 +143,7 @@
   }
   /* 集計テーブルのスタイル */
   #exportTable {
-      width: 100%;
-      table-layout: fixed;
+      /* ★変更点: widthとtable-layoutを削除し、内容に合わせて幅が決まるように戻しました */
       border-collapse: collapse;
       font-size: 13px;
       background: white;
@@ -154,8 +153,6 @@
       padding: 8px 6px;
       text-align: center;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
   }
   #exportTable th {
       background-color: #f2f2f2;
@@ -376,7 +373,7 @@
   // --- ヘルパー関数 ---
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v18'; // バージョンキー更新
+  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v19'; // バージョンキー更新
   
   const save = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -641,7 +638,6 @@
     const container = $('#players');
     container.innerHTML = '';
     
-    // ★★★ ここから変更 ★★★
     for(let i=0; i < state.onCourtSize; i++) {
         const playerId = state.onCourtPlayerIds[i];
         const p = getPlayerById(playerId) || { id: 0, name: '未設定' }; 
@@ -660,7 +656,6 @@
         `;
         container.appendChild(div);
     }
-    // ★★★ ここまで変更 ★★★
 
     $$('.sub-btn').forEach(b => {
       b.removeEventListener('click', handleSubstitution);
