@@ -143,7 +143,8 @@
   }
   /* 集計テーブルのスタイル */
   #exportTable {
-      min-width: 900px;
+      width: 900px; /* ★変更点: テーブル幅を完全に固定 */
+      table-layout: fixed; /* ★変更点: 列幅の計算方法を固定に */
       border-collapse: collapse;
       font-size: 13px;
       background: white;
@@ -153,6 +154,8 @@
       padding: 8px 6px;
       text-align: center;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
   }
   #exportTable th {
       background-color: #f2f2f2;
@@ -288,8 +291,8 @@
       <div class="modal-content">
           <h3 id="memoModalTitle">メモ入力</h3>
           <div class="modal-form-row">
-              <label for="memoInput">メモ:</label>
-              <input type="text" id="memoInput" placeholder="（任意）" autocomplete="off" />
+              <label for="memoInput">メモ（任意）:</label>
+              <input type="text" id="memoInput" placeholder="例: セッタードリブル" autocomplete="off" />
           </div>
           <div class="modal-actions">
               <button id="memoModalCancel">キャンセル</button>
@@ -373,7 +376,7 @@
   // --- ヘルパー関数 ---
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v15'; // バージョンキー更新
+  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v16'; // バージョンキー更新
   
   const save = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -1124,7 +1127,6 @@
         $('#memoModal').classList.add('hidden');
     };
 
-
     renderAll();
   }
 
@@ -1134,4 +1136,3 @@
 </script>
 </body>
 </html>
-
