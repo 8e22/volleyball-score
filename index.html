@@ -170,6 +170,7 @@
     background: #f6f7fb;
   }
 
+  
   /* ★★★ CSS 修正箇所 ★★★ */
   /* (flex-direction: column-reverse; を削除し、 column; (通常の上から下) に変更) */
   #log {
@@ -380,7 +381,7 @@
     padding: 4px 3px;
     text-align: center;
     white-space: normal;
-    min-width: 30px;
+    min-width: 20px;/*30pxから変更*/
   }
 
   #exportTable th {
@@ -399,7 +400,7 @@
   /* ★修正(3): 選手名列 (背景色をth/td共に統一) */
   #exportTable td:first-child {
     text-align: center;
-    min-width: 50px;
+    min-width: 40px; /*50pxから変更*/
     position: sticky;
     left: 0;
     background-color: #f2f2f2; /* ★要望: th/td共に背景色を統一 */
@@ -535,10 +536,32 @@
     line-height: 1.5;
     flex-grow: 1;
   }
+
+  #export-set-tabs .log-tab-btn {
+    /* メイン画面の log-tab-btn スタイルを継承しつつ、集計画面での見栄えを調整 */
+    padding: 6px 10px; /* パディングを少し小さく */
+    font-size: 14px; /* フォントサイズを小さく */
+    border: 1px solid #ddd;
+    border-bottom: 1px solid #ccc; /* 下線とボタンの境界をきれいに見せる */
+    border-radius: 4px 4px 0 0;
+    margin-right: 2px;
+    background: #fff;
+    flex-shrink: 0; /* タブが縮まないようにする */
+}
+
+#export-set-tabs .log-tab-btn.active {
+    /* アクティブなタブのスタイル */
+    border-color: #2a66b9; /* 青い枠線 */
+    border-bottom: 1px solid #fff; /* 下線が消えたように見せる */
+    background: #f6f7fb;
+    font-weight: bold;
+    color: #2a66b9;
+}
+
 </style>
 </head>
 <body>
-  <div class="top-right">オフライン動作可 • Safari推奨</div>
+  <div class="top-right">Safari推奨</div>
   <main>
     <section id="controls">
       <h1>バレースコア記録</h1>
@@ -551,11 +574,33 @@
             <option value="6">リベロなし (6人)</option>
           </select>
         </label>
+         <input type="file" id="jsonFileInput" accept=".json" style="display:none;" onchange="importDataFromJSON(event)">
+        <button onclick="document.getElementById('jsonFileInput').click()">インポート(JSON)</button>
         <button id="newGame">新しい試合</button>
-        <button id="showExportScreen">集計・エクスポート</button>
+        <button id="showExportScreen">集計</button>
       </div>
     </section>
-    
+    <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
+
+    <section id="set-controls" style="margin-bottom: 20px;">
+        <h2>セット管理</h2>
+        <div class="row" style="align-items: flex-end; display: flex;">
+            <div id="set-tabs" class="log-tabs"    style="flex-grow: 1;">
+            </div>
+            <button id="nextSetButton" class="btn-primary">次のセットへ</button>
+            <div id="nextSetConfirmModal" class="modal hidden">
+              <div class="modal-content">
+                <p id="nextSetConfirmMessage" style="text-align: center"></p>
+                   <div class="modal-actions">
+                     <button id="nextSetCancel" class="btn-secondary">キャンセル</button>
+                      <button id="nextSetConfirm" class="btn-primary" style="background-color: #ffd0d2;">次のセットへ</button>
+                 </div>
+                </div>
+              </div>
+          </div>
+    </section>
+
+    <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
     <section id="allPlayersContainer">
       <h2>全選手登録・管理</h2>
       <div id="allPlayersList"></div>
@@ -595,7 +640,6 @@
       </div>
       <div id="logControls" class="row">
         <button id="undo">直前を取り消す</button>
-        <button id="clearLog">ログをクリア</button>
       </div>
       <ul id="log"></ul>
     </section>
@@ -659,11 +703,18 @@
   </div>
 
   <div id="exportModal" class="modal hidden" role="dialog">
+    
     <div class="modal-content">
       <h3 id="exportModalTitle">集計結果・詳細</h3>
       <div id="exportInfo">
         <p></p>
       </div>
+      <div id="exportSetScores">
+    </div>
+      <div id="export-set-tabs" class="set-tabs-container">
+      </div>
+
+      
       <div id="scoreGraphContainer">
         <h3>得点グラフ</h3>
         <div class="graph-viewport"></div>
@@ -673,44 +724,75 @@
       </div>
       <div id="reflectionContainer">
         <h3>試合の反省・メモ</h3>
-        <textarea id="matchReflection" placeholder="試合全体の反省点や気づきなどを記録できます"></textarea>
+        <textarea id="matchReflection" placeholder="試合の反省点などを記録できます"></textarea>
       </div>
       <div class="modal-actions">
+        <button id="downloadJsonButton">全データをJSON形式でダウンロード</button>
+        <button id="downloadCsvButton">集計表をCSV形式でダウンロード</button>
         <button id="exportModalClose">閉じる</button>
       </div>
     </div>
   </div>
 
-<script>
-(function () {
-  // --- Constants and State ---
-  let nextPlayerId = 8;
-  let currentSubSlotIndex = null;
-  let currentMemoAction = null;
-  
-  const state = {
-    teamName: '自チーム',
-    opponentName: '相手チーム',
-    currentSet: 1,
-    matchDate: Date.now(),
-    onCourtSize: 7,
-    allPlayers: [
-      { id: 1, name: '名前1', tP: 0, tE: 0 },
-      { id: 2, name: '名前2', tP: 0, tE: 0 },
-      { id: 3, name: '名前3', tP: 0, tE: 0 },
-      { id: 4, name: '名前4', tP: 0, tE: 0 },
-      { id: 5, name: '名前5', tP: 0, tE: 0 },
-      { id: 6, name: '名前6', tP: 0, tE: 0 },
-      { id: 7, name: 'リベロ', tP: 0, tE: 0 }
-    ].map(p => ({ ...p, totalPoints: p.tP, totalErrors: p.tE })),
-    onCourtPlayerIds: [1, 2, 3, 4, 5, 6, 7],
-    log: [],
-    teamScore: 0,
-    opponentScore: 0,
-    reflection: ''
-  };
+  <div id="logEditModal" class="modal hidden" role="dialog">
+      <div class="modal-content">
+          <h3 id="logEditModalTitle">アクション編集</h3>
+          <form id="logEditForm">
+              <input type="hidden" id="logEditOriginalIndex" /> <div class="modal-form-row">
+                  <h4>アクションの種類</h4>
+                  <div id="logEditActionType" style="font-weight: bold; margin-bottom: 8px;"></div>
+              </div>
 
-  const ACTION_CONFIG = {
+              <div class="modal-form-row" id="logEditPlayerRow">
+                  <h4>実行プレイヤーを選択</h4>
+                  <div id="logEdit-player-select-list" class="choice-list"></div>
+              </div>
+              
+              <div class="modal-form-row" id="logEditResultRow">
+                  <h4>結果を選択</h4>
+                  <div id="logEdit-result-select-list" class="choice-list"></div>
+              </div>
+              
+              <div class="modal-form-row">
+                  <label for="logEditMemoInput">メモ（任意）:</label>
+                  <input type="text" id="logEditMemoInput" autocomplete="off" />
+              </div>
+          </form>
+          <div class="modal-actions">
+              <button id="logEditDelete" style="background: #fdeeee; color: #9b2c2c;">このログを削除</button>
+              <span style="flex-grow: 1;"></span>
+              <button id="logEditCancel">キャンセル</button>
+              <button id="logEditConfirm" class="action">変更確定</button>
+          </div>
+      </div>
+  </div>
+
+  <div id="newGameConfirmModal" class="modal hidden" role="dialog">
+    <div class="modal-content" style="min-width: 280px; text-align: center;">
+        <h3 style="margin-top: 0;">新規試合開始の確認</h3>
+        <p>現在の記録はリセットされます。</p>
+        <p>本当に新規試合を開始しますか？</p>
+        <div class="modal-actions" style="justify-content: center;">
+            <button id="newGameCancel">いいえ (キャンセル)</button>
+            <button id="newGameConfirm" style="background: #ffeae9; color: rgb(0, 0, 0);">はい (開始)</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Global Variables/Helpers ---
+    const $ = s => document.querySelector(s);
+    const $$ = s => document.querySelectorAll(s);
+    let currentMemoAction = null;
+    let currentSubSlotIndex = null;
+    let nextPlayerId = 1;
+    let currentLogEditIndex = null;
+    
+    // exportViewingSetIndex の定義を修正: 
+    // -1: 全体合算, 0: Set 1のみ, 1: Set 2のみ, ...
+    let exportViewingSetIndex = -1; // 初期値は「全体」
+    
+    const ACTION_CONFIG = {
     POINT_ACTION: {
       actions: ['サーブ', 'スパイク'],
       results: [{ v: '得点', p: true, e: false }, { v: 'ミス', p: false, e: true }, { v: 'その他', p: false, e: false }]
@@ -748,836 +830,1571 @@
     return { teamPointChange: t, opponentPointChange: o };
   }
 
-  const $ = (s) => document.querySelector(s);
-  const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const STORAGE_KEY = 'v2_offlineScoreApp_improved_v29'; // ★バージョン更新
-  
-  const save = () => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {
-      console.error("Save failed:", e);
-    }
-  };
+    // --- State & Set Management ---
+    const state = {
+        teamName: '自チーム',
+        opponentName: '相手チーム',
+        matchDate: Date.now(),
+        onCourtSize: 7, // 6 or 7
+        allPlayers: [], // { id, name, totalPoints(試合トータル), totalErrors(試合トータル) }
+        onCourtPlayerIds: [], // コート上の選手ID
+        
+        activeSetIndex: 0, 
+        viewingSetIndex: 0, 
+        matchSets: [], 
+    };
 
-  const load = () => {
-    try {
-      const v = localStorage.getItem(STORAGE_KEY);
-      if (v) {
-        const p = JSON.parse(v);
-        const m = { ...{ reflection: '', teamName: '自チーム', opponentName: '相手チーム', currentSet: 1 }, ...p };
-        Object.assign(state, m);
-        state.teamScore = state.teamScore || 0;
-        state.opponentScore = state.opponentScore || 0;
-        state.allPlayers = state.allPlayers || [];
-        state.log = state.log || [];
-        state.currentSet = (state.currentSet === undefined || state.currentSet === null || state.currentSet < 0) ? 1 : state.currentSet;
-        state.matchDate = state.matchDate || Date.now();
-        state.onCourtSize = state.onCourtSize || 7;
-        state.reflection = state.reflection || '';
-        state.teamName = state.teamName || '自チーム';
-        state.opponentName = state.opponentName || '相手チーム';
-        
-        const tS = state.onCourtSize;
-        let cIds = [];
-        if (state.onCourtPlayerIds?.length) cIds = state.onCourtPlayerIds.slice(0, tS);
-        else cIds = state.allPlayers.slice(0, tS).map(p => p.id);
-        
-        while (cIds.length < tS) {
-          const avail = state.allPlayers.filter(p => p.id && !cIds.includes(p.id));
-          if (avail.length) cIds.push(avail[0].id);
-          else {
-            cIds.push(0);
-            console.warn("Not enough players.");
-          }
-        }
-        state.onCourtPlayerIds = cIds;
-        
-        const sIds = new Set();
-        state.allPlayers = state.allPlayers.filter(p => {
-          if (p?.id && !sIds.has(p.id)) {
-            sIds.add(p.id);
-            return true;
-          }
-          return false;
+    function createNewSetData(setNum) {
+        return {
+            setNumber: setNum,
+            log: [], 
+            teamScore: 0,
+            opponentScore: 0,
+            reflection: '',
+        };
+    }
+
+    function getActiveSet() {
+        return state.matchSets[state.activeSetIndex];
+    }
+    
+    function getViewingSet() {
+        return state.matchSets[state.viewingSetIndex];
+    }
+    
+    // --- Data Persistence ---
+    const save = () => {
+        const p = JSON.stringify({ 
+            ...state, 
+            log: undefined, 
+            teamScore: undefined, 
+            opponentScore: undefined, 
+            reflection: undefined, 
+            nextPlayerId: nextPlayerId
         });
-        
-        if (state.allPlayers.length < tS) initPlayers(tS, true);
-        
-        const maxId = state.allPlayers.reduce((max, p) => Math.max(max, p.id || 0), 0);
-        nextPlayerId = Math.max(maxId + 1, state.allPlayers.length + 1, 8);
-        recomputeFromLog();
-      } else {
-        initPlayers(7);
-      }
-    } catch (e) {
-      console.error("Load failed. Resetting.", e);
-      localStorage.removeItem(STORAGE_KEY);
-      initPlayers(7);
-      state.reflection = '';
-      save();
-    }
-  };
+        localStorage.setItem('vb_scorer_state', p);
+    };
 
-  function initPlayers(n, isLoad = false) {
-    const oldP = isLoad ? [...state.allPlayers] : [],
-          oldC = isLoad ? [...state.onCourtPlayerIds] : [];
-    state.onCourtSize = n;
-    state.allPlayers = [];
-    state.onCourtPlayerIds = [];
-    let curNextId = nextPlayerId;
-    
-    for (let i = 0; i < n; i++) {
-      let pAdd = null;
-      if (isLoad && oldC[i]) pAdd = oldP.find(p => p.id === oldC[i]);
-      if (!pAdd && isLoad) {
-        const avail = oldP.find(p => p.id && !state.allPlayers.some(ap => ap.id === p.id));
-        if (avail) pAdd = avail;
-      }
-      if (!pAdd) {
-        const name = i === n - 1 && n === 7 ? 'リベロ' : (`名前${i + 1}`);
-        while (oldP.some(p => p.id === curNextId) || state.allPlayers.some(p => p.id === curNextId)) curNextId++;
-        pAdd = { id: curNextId++, name: name, tP: 0, tE: 0 };
-      }
-      state.allPlayers.push({ ...pAdd, totalPoints: pAdd.tP || 0, totalErrors: pAdd.tE || 0 });
-      state.onCourtPlayerIds.push(pAdd.id);
-    }
-    
-    if (isLoad) oldP.forEach(p => {
-      if (p.id && !state.allPlayers.some(ap => ap.id === p.id)) state.allPlayers.push({ ...p, totalPoints: p.tP || 0, totalErrors: p.tE || 0 });
-    });
-    
-    if (!isLoad) {
-      state.log = [];
-      state.teamScore = 0;
-      state.opponentScore = 0;
-      state.currentSet = 1;
-      state.matchDate = Date.now();
-      state.reflection = '';
-    }
-    
-    state.allPlayers.forEach(p => {
-      p.totalPoints = p.totalPoints || 0;
-      p.totalErrors = p.totalErrors || 0;
-    });
-    
-    const maxId = state.allPlayers.reduce((max, p) => Math.max(max, p.id || 0), 0);
-    nextPlayerId = Math.max(curNextId, maxId + 1, 8);
-  }
+    const load = () => {
+        const p = JSON.parse(localStorage.getItem('vb_scorer_state'));
+        if (p) {
+            // 基本情報のロード
+            state.teamName = p.teamName || state.teamName;
+            state.opponentName = p.opponentName || state.opponentName;
+            state.matchDate = p.matchDate || state.matchDate;
+            state.onCourtSize = p.onCourtSize || 7; 
+            state.allPlayers = p.allPlayers || state.allPlayers;
+            state.onCourtPlayerIds = p.onCourtPlayerIds || [];
+            nextPlayerId = p.nextPlayerId || state.allPlayers.length + 1;
 
-  function getPlayerById(id) {
-    if (!id) return undefined;
-    return state.allPlayers.find(x => x.id === id);
-  }
-
-  function escapeHtml(s) {
-    if (s == null) return '';
-    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
-
-  function getFormattedDate(t) {
-    if (!t) return '--/--/-- (-)';
-    try {
-      const d = new Date(t);
-      if (isNaN(d.getTime())) return '--/--/-- (-)';
-      const y = String(d.getFullYear()).slice(-2),
-        m = d.getMonth() + 1,
-        day = d.getDate(),
-        w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-      return `${y}/${m}/${day}(${w})`;
-    } catch (e) {
-      console.error("Date fail:", e);
-      return '--/--/-- (-)';
-    }
-  }
-
-  function autosizeTextarea(el) {
-    el.style.height = 'auto';
-    el.style.height = (el.scrollHeight) + 'px';
-  }
-
-  // --- Modals ---
-  function showMemoModal(a) {
-    currentMemoAction = a;
-    $('#memoModalTitle').textContent = `${a} メモ`;
-    $('#memoInput').value = '';
-    $('#memoModal').classList.remove('hidden');
-    $('#memoInput').focus();
-  }
-
-  function handleActionButton(e) {
-    const act = e.currentTarget.dataset.action,
-      type = e.currentTarget.dataset.type;
-    if (act === 'その他失点' || act === 'その他得点') {
-      showMemoModal(act);
-      return;
-    }
-    const modal = $('#modal'),
-      title = $('#modalTitle'),
-      actIn = $('#modalAction'),
-      typeIn = $('#modalType'),
-      pList = $('#player-select-list'),
-      rList = $('#result-select-list');
-    
-    title.textContent = `${act} 記録`;
-    actIn.value = act;
-    typeIn.value = type;
-    $('#actionMemoInput').value = '';
-    
-    const onP = state.onCourtPlayerIds.map(id => getPlayerById(id)).filter(p => p);
-    pList.innerHTML = onP.map(p => {
-      const isL = state.onCourtSize === 7 && state.onCourtPlayerIds.indexOf(p.id) === 6,
-        suf = isL ? ' (L)' : '',
-        name = p.name?.trim() || `ID:${p.id}`;
-      return `<label class="choice-label"><input type="radio" name="playerId" value="${p.id}" required><span>${escapeHtml(name)}${suf}</span></label>`;
-    }).join('');
-    if (!pList.innerHTML) pList.innerHTML = '<p>選手なし</p>';
-    
-    const res = getActionResults(act);
-    rList.innerHTML = res.map(r => `<label class="choice-label"><input type="radio" name="result" value="${r.value}" data-is-point="${r.isPoint}" data-is-error="${r.isError}" required><span>${escapeHtml(r.value)}</span></label>`).join('');
-    modal.classList.remove('hidden');
-  }
-
-  $('#modalConfirm').onclick = () => {
-    const form = $('#actionForm'),
-      selP = form.querySelector('input[name="playerId"]:checked'),
-      selR = form.querySelector('input[name="result"]:checked'),
-      memoIn = $('#actionMemoInput');
-    
-    if (!selP) { alert('選手選択必須'); return; }
-    if (!selR) { alert('結果選択必須'); return; }
-    
-    const pId = Number(selP.value),
-      act = $('#modalAction').value,
-      res = selR.value,
-      isP = selR.dataset.isPoint === 'true',
-      isE = selR.dataset.isError === 'true',
-      memo = memoIn.value.trim();
-      
-    recordAction(pId, act, res, isP, isE, memo);
-    $('#modal').classList.add('hidden');
-    memoIn.value = '';
-  };
-
-  $('#modalCancel').onclick = () => {
-    $('#modal').classList.add('hidden');
-    $('#actionMemoInput').value = '';
-  };
-
-  function handleSubstitution(e) {
-    const idx = Number(e.currentTarget.dataset.slotIndex);
-    if (isNaN(idx) || idx < 0 || idx >= state.onCourtPlayerIds.length) {
-      console.error("Invalid slot:", idx);
-      return;
-    }
-    
-    const outId = state.onCourtPlayerIds[idx],
-      outP = getPlayerById(outId);
-    if (!outP && outId !== 0) {
-      console.warn(`Sub fail ID: ${outId}`);
-      alert('交代アウト選手が見つかりません');
-      return;
-    }
-    
-    const outName = outP ? (outP.name.trim() || `ID:${outP.id}`) : '未設定';
-    currentSubSlotIndex = idx;
-    let slotN = `S${idx + 1}`;
-    if (state.onCourtSize === 7 && idx === 6) slotN = 'リベロ枠';
-    
-    $('#subOutPlayerName').textContent = `${escapeHtml(outName)}(${slotN} OUT)`;
-    
-    const subList = $('#sub-player-select-list');
-    subList.innerHTML = '';
-    const avail = state.allPlayers.filter(p => p.id && !state.onCourtPlayerIds.includes(p.id));
-    const opts = avail.map(p => {
-      const name = p.name?.trim() || `ID:${p.id}`;
-      return `<label class="choice-label"><input type="radio" name="subInPlayer" value="${p.id}" required><span>${escapeHtml(name)}</span></label>`;
-    }).join('');
-    
-    subList.innerHTML = opts || '<p>交代選手なし</p>';
-    $('#subModal').classList.remove('hidden');
-  }
-
-  $('#subModalConfirm').onclick = () => {
-    const selIn = $('#sub-player-select-list input[name="subInPlayer"]:checked');
-    if (!selIn || currentSubSlotIndex === null) {
-      alert('交代イン選手を選択');
-      return;
-    }
-    
-    const newId = Number(selIn.value),
-      oldId = state.onCourtPlayerIds[currentSubSlotIndex],
-      newP = getPlayerById(newId);
-      
-    if (!newP) {
-      console.error(`Sub fail new ID: ${newId}`);
-      alert('交代イン選手情報なし');
-      return;
-    }
-    
-    state.onCourtPlayerIds[currentSubSlotIndex] = newId;
-    state.log.push({
-      time: Date.now(),
-      type: 'sub',
-      playerId: newId,
-      slotIndex: currentSubSlotIndex,
-      oldPlayerId: oldId,
-      action: '交代',
-      result: `S${currentSubSlotIndex + 1}に${escapeHtml(newP.name || `ID:${newP.id}`)} IN`
-    });
-    
-    currentSubSlotIndex = null;
-    save();
-    renderAll();
-    $('#subModal').classList.add('hidden');
-  };
-
-  $('#subModalCancel').onclick = () => {
-    currentSubSlotIndex = null;
-    $('#subModal').classList.add('hidden');
-  };
-
-  // --- Rendering ---
-  function renderPartial() {
-    renderLog();
-  }
-  
-  function renderAll() {
-    renderPlayers();
-    renderLog();
-    renderAllPlayersList();
-  }
-
-  function renderPlayers() {
-    const cont = $('#players');
-    cont.innerHTML = '';
-    for (let i = 0; i < state.onCourtSize; i++) {
-      const pId = (i < state.onCourtPlayerIds.length) ? state.onCourtPlayerIds[i] : 0,
-        p = getPlayerById(pId) || { id: 0, name: '未設定' },
-        div = document.createElement('div');
-        
-      div.className = 'player';
-      div.setAttribute('data-slot-index', i);
-      div.setAttribute('data-player-id', p.id);
-      
-      const dispN = p.name?.trim() || (p.id ? `ID:${p.id}` : '未設定'),
-        slotN = (state.onCourtSize === 7 && i === 6) ? ' (L)' : '';
-        
-      div.innerHTML = `<h3 title="${escapeHtml(dispN)} (S${i + 1})">${escapeHtml(dispN)}${slotN}</h3><button class="sub-btn" data-slot-index="${i}">交代</button>`;
-      cont.appendChild(div);
-    }
-    $$('.sub-btn').forEach(b => {
-      b.removeEventListener('click', handleSubstitution);
-      b.addEventListener('click', handleSubstitution);
-    });
-  }
-
-  function renderAllPlayersList() {
-    const cont = $('#allPlayersList'),
-      focusEl = document.activeElement,
-      focusId = focusEl?.classList.contains('edit-player-name') ? focusEl.dataset.id : null,
-      curPos = focusEl?.selectionStart;
-      
-    cont.innerHTML = '';
-    state.allPlayers.forEach(p => {
-      if (!p?.id) return;
-      const div = document.createElement('div');
-      div.className = 'player-register-row';
-      const isOn = state.onCourtPlayerIds.includes(p.id);
-      let status = '';
-      if (isOn) {
-        const idx = state.onCourtPlayerIds.indexOf(p.id);
-        if (idx !== -1) status = (state.onCourtSize === 7 && idx === 6) ? '【L】' : '【コート】';
-        else status = '【？】';
-      }
-      const rem = !isOn,
-        name = p.name || '';
-      div.innerHTML = `<input type="text" class="edit-player-name player-register-name-input" value="${escapeHtml(name)}" data-id="${p.id}" placeholder="名前" inputmode="text" autocomplete="off"><div style="width:70px;font-size:11px;align-self:center;text-align:right;color:${isOn ? '#2a66b9' : '#888'};">${status}</div><button class="remove-player-btn" data-id="${p.id}" ${rem ? '' : 'disabled'}>削除</button>`;
-      cont.appendChild(div);
-    });
-    
-    $$('.edit-player-name').forEach(el => {
-      el.removeEventListener('input', handlePlayerNameEdit);
-      el.addEventListener('input', handlePlayerNameEdit);
-    });
-    $$('.remove-player-btn').forEach(el => {
-      el.removeEventListener('click', handleRemovePlayer);
-      el.addEventListener('click', handleRemovePlayer);
-    });
-    
-    if (focusId) {
-      const newEl = $(`#allPlayersList input.edit-player-name[data-id="${focusId}"]`);
-      if (newEl) {
-        newEl.focus();
-        if (curPos !== null) {
-          try { newEl.setSelectionRange(curPos, curPos); } catch (e) {}
-        }
-      }
-    }
-  }
-
-  function handlePlayerNameEdit(e) {
-    const id = Number(e.target.dataset.id),
-      name = e.target.value,
-      p = getPlayerById(id);
-    if (p) {
-      p.name = name;
-      save();
-      renderPlayers();
-    }
-  }
-
-  // ★★★ JAVASCRIPT 修正箇所 (renderLog) ★★★
-  function renderLog() {
-    const ul = $('#log');
-    ul.innerHTML = '';
-    let scores = [], t = 0, o = 0;
-    
-    state.log.forEach(e => {
-      const isO = e.action === 'その他得点',
-        sc = getScoreChanges(e.isPoint, e.isError, isO);
-      t += sc.teamPointChange;
-      o += sc.opponentPointChange;
-      scores.push(e.type !== 'sub' ? `${t}-${o}` : null);
-    });
-    
-    // .reverse() でログ配列を反転 (最新が先頭に来る)
-    const tab = $('.log-tab-btn.active').dataset.tab,
-      revLog = state.log.map((e, i) => ({ ...e, originalIndex: i })).reverse();
-      
-    for (const e of revLog) {
-      const hasScore = e.type !== 'sub' && (e.isPoint || e.isError || e.action === 'その他得点' || e.action === 'その他失点');
-      let display = true;
-      if (tab === 'point' && !hasScore) display = false;
-      
-      if (display) {
-        let text = '';
-        if (e.type === 'sub') {
-          const p = getPlayerById(e.playerId),
-            name = p ? p.name.trim() || `ID:${p.id}` : '不明';
-          let slot = `S${e.slotIndex + 1}`;
-          if (state.onCourtSize === 7 && e.slotIndex === 6) slot = 'L';
-          text = `[換] ${slot} に ${name} IN`;
+            // セットデータのロード
+            state.matchSets = p.matchSets || [];
+            if (state.matchSets.length === 0) {
+                 // 旧バージョンからの移行処理（または空の場合の初期化）
+                 if (p.log || p.teamScore || p.opponentScore) {
+                    const set1 = createNewSetData(1);
+                    set1.log = p.log || [];
+                    set1.teamScore = p.teamScore || 0;
+                    set1.opponentScore = p.opponentScore || 0;
+                    set1.reflection = p.reflection || '';
+                    state.matchSets.push(set1);
+                 } else {
+                    state.matchSets.push(createNewSetData(1));
+                 }
+            }
+            
+            state.activeSetIndex = p.activeSetIndex ?? state.matchSets.length - 1;
+            state.viewingSetIndex = p.viewingSetIndex ?? state.activeSetIndex; 
+            
+            recomputeFromLog();
+            
         } else {
-          // ★修正: アクションログに「結果(e.result)」を追加
-          const p = getPlayerById(e.playerId),
-            name = p ? (p.name.trim() || `ID:${p.id}`) : '--';
-          if (e.action === 'その他得点' || e.action === 'その他失点') {
-              text = `[${e.action}]`; // その他得点/失点の場合は結果(e.result)は不要
-          } else {
-              text = `${name} [${e.action}] ${escapeHtml(e.result || '')}`; // 通常のアクション
-          }
-          
-          const score = scores[e.originalIndex];
-          if (score && hasScore) text += ` (${score})`;
+            // 初回起動時: プレイヤー初期化をここで呼ぶ
+            initPlayers(7, true); 
+            state.matchSets = [createNewSetData(1)]; 
         }
-        
-        const li = document.createElement('li');
-        if (e.memo) text += ` <span style="font-size:0.9em;color:#555;">(${escapeHtml(e.memo)})</span>`;
-        li.innerHTML = text;
-        ul.appendChild(li); // ulの末尾に追加 (CSSで flex-direction: column; にしたので表示順はそのまま)
-      }
+    };
+    
+    // --- Core Functions ---
+    function getPlayerById(id) {
+        if (!id) return undefined;
+        return state.allPlayers.find(x => x.id === id);
     }
-  }
-  // ★★★ JAVASCRIPT 修正箇所ここまで ★★★
 
-
-  // --- Player Management ---
-  function handleAddPlayer() {
-    const input = $('#newPlayerName'),
-      name = input.value.trim();
-    if (!name) { alert('名前入力必須'); input.focus(); return; }
-    if (state.allPlayers.some(p => p.name === name)) { alert('同名選手あり'); input.focus(); return; }
-    
-    let newId = nextPlayerId;
-    while (state.allPlayers.some(p => p.id === newId)) newId++;
-    nextPlayerId = newId + 1;
-    
-    const newP = { id: newId, name: name, tP: 0, tE: 0 };
-    state.allPlayers.push({ ...newP, totalPoints: 0, totalErrors: 0 });
-    input.value = '';
-    save();
-    renderAll();
-    $('#newPlayerName').focus();
-  }
-
-  function handleRemovePlayer(event) {
-    const id = Number(event.currentTarget.dataset.id),
-      pR = getPlayerById(id);
-    if (!pR) { console.warn(`Cannot remove ID ${id}`); return; }
-    if (state.onCourtPlayerIds.includes(id)) { alert('コート上の選手は削除不可'); return; }
-    if (!confirm(`選手「${escapeHtml(pR.name || `ID:${id}`)}」削除しますか？`)) return;
-    
-    state.allPlayers = state.allPlayers.filter(p => p.id !== id);
-    save();
-    renderAll();
-  }
-
-  // --- Scoring ---
-  function recordOtherLostPoint(memo) {
-    let rT = state.opponentName + 'が得点';
-    state.log.push({ time: Date.now(), type: 'point', pId: null, action: 'その他失点', result: rT, memo: memo || undefined, isPoint: false, isError: true });
-    recomputeFromLog();
-    save();
-    renderLog();
-    if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
-  }
-
-  function recordOtherPoint(memo) {
-    let rT = state.teamName + 'が得点';
-    state.log.push({ time: Date.now(), type: 'point', pId: null, action: 'その他得点', result: rT, memo: memo || undefined, isPoint: true, isError: false });
-    recomputeFromLog();
-    save();
-    renderLog();
-    if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
-  }
-
-  function recordAction(pId, act, res, isP, isE, memo = '') {
-    const ev = { time: Date.now(), type: 'action', playerId: pId, action: act, result: res, isPoint: isP, isError: isE, memo: memo || undefined };
-    state.log.push(ev);
-    recomputeFromLog();
-    save();
-    renderLog();
-    if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
-  }
-
-  function recomputeFromLog() {
-    state.teamScore = 0;
-    state.opponentScore = 0;
-    state.allPlayers.forEach(p => { p.totalPoints = 0; p.totalErrors = 0; });
-    
-    for (const e of state.log) {
-      if (e.type === 'action' || e.type === 'point') {
-        const isO = e.action === 'その他得点',
-          sc = getScoreChanges(e.isPoint, e.isError, isO);
-        state.teamScore += sc.teamPointChange;
-        state.opponentScore += sc.opponentPointChange;
-        
-        if (e.type === 'action' && e.playerId) {
-          const p = getPlayerById(e.playerId);
-          if (p) {
-            if (e.isPoint) p.totalPoints++;
-            if (e.isError) p.totalErrors++;
-          }
-        }
-      }
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
-  }
 
-  // --- Export ---
-  function tallyActionsByPlayer() {
-    const dets = [], resMap = {};
-    for (const k in ACTION_CONFIG) {
-      ACTION_CONFIG[k].actions.forEach(a => {
-        dets.push(a);
-        ACTION_CONFIG[k].results.forEach(r => {
-          if (!resMap[a]) resMap[a] = new Set();
-          resMap[a].add(r.v);
-        });
-      });
+    function getFormattedDate(t) {
+        if (!t) return '--/--/-- (-)';
+        try {
+            const d = new Date(t);
+            if (isNaN(d.getTime())) return '--/--/-- (-)';
+            const y = String(d.getFullYear()).slice(-2),
+                m = d.getMonth() + 1,
+                day = d.getDate(),
+                w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+            return `${y}/${m}/${day}(${w})`;
+        } catch (e) {
+            console.error("Date fail:", e);
+            return '--/--/-- (-)';
+        }
     }
-    
-    const tally = new Map();
-    state.allPlayers.forEach(p => {
-      if (!p?.id) return;
-      tally.set(p.id, {
-        id: p.id,
-        name: p.name?.trim() || `ID:${p.id}`,
-        actions: dets.reduce((acc, a) => {
-          acc[a] = {};
-          Array.from(resMap[a] || []).forEach(r => { acc[a][r] = 0; });
-          return acc;
-        }, {})
-      });
-    });
-    
-    state.log.forEach(e => {
-      if (e.type === 'action' && e.playerId) {
-        const a = e.action,
-          r = e.result,
-          pT = tally.get(e.playerId);
-        if (pT?.actions[a]?.hasOwnProperty(r)) pT.actions[a][r]++;
-      }
-    });
-    
-    return { tallyData: Array.from(tally.values()), actionResultsMap: resMap, actionCategories: dets };
-  }
 
-  function buildExportTable() {
-    const tab = $('#exportTable'),
-      { tallyData: data, actionResultsMap: resMap, actionCategories: cats } = tallyActionsByPlayer();
-      
-    if (!cats.length) { tab.innerHTML = `<caption>集計</caption><tr><td>記録なし</td></tr>`; return; }
-    if (!data.length) { tab.innerHTML = `<caption>集計</caption><tr><td>選手未登録</td></tr>`; return; }
+    function autosizeTextarea(el) {
+        el.style.height = 'auto';
+        el.style.height = (el.scrollHeight) + 'px';
+    }
+
+    // --- Modals ---
+    function showMemoModal(a) {
+        currentMemoAction = a;
+        $('#memoModalTitle').textContent = `${a} メモ`;
+        $('#memoInput').value = '';
+        $('#memoModal').classList.remove('hidden');
+        $('#memoInput').focus();
+    }
+
+    function handleActionButton(e) {
+        const act = e.currentTarget.dataset.action,
+            type = e.currentTarget.dataset.type;
+
+        if (!act) return; 
+        
+        if (act === 'その他失点' || act === 'その他得点') {
+            showMemoModal(act);
+            return;
+        }
+        
+        const modal = $('#modal'),
+            title = $('#modalTitle'),
+            actIn = $('#modalAction'),
+            typeIn = $('#modalType'),
+            pList = $('#player-select-list'),
+            rList = $('#result-select-list');
+        
+        title.textContent = `${act} 記録`;
+        actIn.value = act;
+        typeIn.value = type;
+        $('#actionMemoInput').value = '';
+        
+        const onP = state.onCourtPlayerIds.map(id => getPlayerById(id)).filter(p => p);
+        pList.innerHTML = onP.map(p => {
+            const isL = state.onCourtSize === 7 && state.onCourtPlayerIds.indexOf(p.id) === 6,
+                suf = isL ? ' (Li)' : '',
+                name = p.name?.trim() || `ID:${p.id}`;
+            return `<label class="choice-label"><input type="radio" name="playerId" value="${p.id}" required><span>${escapeHtml(name)}${suf}</span></label>`;
+        }).join('');
+        if (!pList.innerHTML) pList.innerHTML = '<p>選手なし</p>';
+        
+        // 外部定義の getActionResults を使用
+        const res = getActionResults(act); 
+        rList.innerHTML = res.map(r => `<label class="choice-label"><input type="radio" name="result" value="${r.v}" data-is-point="${r.p}" data-is-error="${r.e}" required><span>${escapeHtml(r.v)}</span></label>`).join('');
+        modal.classList.remove('hidden');
+    }
+
+    $('#modalConfirm').onclick = () => {
+        const form = $('#actionForm'),
+            selP = form.querySelector('input[name="playerId"]:checked'),
+            selR = form.querySelector('input[name="result"]:checked'),
+            memoIn = $('#actionMemoInput');
+        
+        if (!selP) { alert('選手選択必須'); return; }
+        if (!selR) { alert('結果選択必須'); return; }
+        
+        const pId = Number(selP.value),
+            act = $('#modalAction').value,
+            res = selR.value,
+            isP = selR.dataset.isPoint === 'true',
+            isE = selR.dataset.isError === 'true',
+            memo = memoIn.value.trim();
+            
+        recordAction(pId, act, res, isP, isE, memo);
+        $('#modal').classList.add('hidden');
+        memoIn.value = '';
+    };
+
+    $('#modalCancel').onclick = () => {
+        $('#modal').classList.add('hidden');
+        $('#actionMemoInput').value = '';
+    };
     
-    let html = '<thead><tr><th rowspan="2">選手</th>', // 「選手」ヘッダー
-      subH = '<tr>'; // サブヘッダー行 (機会, 得点, ミス...)
-      
-    cats.forEach(a => {
-      const res = Array.from(resMap[a] || []);
-      if (res.length) {
-        // 「機会」列の分、colspanを+1
-        html += `<th colspan="${res.length + 1}">${escapeHtml(a)}</th>`; 
+    function handleSubstitution(e) {
+        const idx = Number(e.currentTarget.dataset.slotIndex);
+        if (isNaN(idx) || idx < 0 || idx >= state.onCourtPlayerIds.length) {
+            console.error("Invalid slot:", idx);
+            return;
+        }
         
-        // サブヘッダーに「機会」を追加 (opportunity-header クラスは任意だが残しておく)
-        subH += `<th class="opportunity-header">機会</th>`; 
+        const outId = state.onCourtPlayerIds[idx],
+            outP = getPlayerById(outId);
+        if (!outP && outId !== 0) {
+            console.warn(`Sub fail ID: ${outId}`);
+            alert('交代アウト選手が見つかりません');
+            return;
+        }
         
-        // ★修正(1): サブヘッダーにも category-divider クラスを付与
-        res.forEach((r, resIndex) => { 
-            const isLastCellOfCategory = (resIndex === res.length - 1);
-            const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
-            subH += `<th class="${dividerClass}">${escapeHtml(r)}</th>`; 
+        const outName = outP ? (outP.name.trim() || `ID:${outP.id}`) : '未設定';
+        currentSubSlotIndex = idx;
+        let slotN = `S${idx + 1}`;
+        if (state.onCourtSize === 7 && idx === 6) slotN = 'リベロ枠';
+        
+        $('#subOutPlayerName').textContent = `${escapeHtml(outName)}(${slotN} OUT)`;
+        
+        const subList = $('#sub-player-select-list');
+        subList.innerHTML = '';
+        // 交代イン可能な選手: 全選手のうち、コート上にいない選手 (ID=0は除く)
+        const avail = state.allPlayers.filter(p => p.id && !state.onCourtPlayerIds.includes(p.id));
+        const opts = avail.map(p => {
+            const name = p.name?.trim() || `ID:${p.id}`;
+            return `<label class="choice-label"><input type="radio" name="subInPlayer" value="${p.id}" required><span>${escapeHtml(name)}</span></label>`;
+        }).join('');
+        
+        subList.innerHTML = opts || '<p>交代選手なし</p>';
+        $('#subModal').classList.remove('hidden');
+    }
+
+    $('#subModalConfirm').onclick = () => {
+        const selIn = $('#sub-player-select-list input[name="subInPlayer"]:checked');
+        if (!selIn || currentSubSlotIndex === null) {
+            alert('交代イン選手を選択');
+            return;
+        }
+        
+        const newId = Number(selIn.value),
+            oldId = state.onCourtPlayerIds[currentSubSlotIndex],
+            newP = getPlayerById(newId);
+            
+        if (!newP) {
+            console.error(`Sub fail new ID: ${newId}`);
+            alert('交代イン選手情報なし');
+            return;
+        }
+        
+        state.onCourtPlayerIds[currentSubSlotIndex] = newId;
+        
+        const activeSet = getActiveSet();
+        activeSet.log.push({
+            time: Date.now(),
+            type: 'sub',
+            playerId: newId,
+            slotIndex: currentSubSlotIndex,
+            oldPlayerId: oldId,
+            action: '交代',
+            result: `S${currentSubSlotIndex + 1}に${escapeHtml(newP.name || `ID:${newP.id}`)} IN`
         });
-      }
-    });
-    html += `</tr>${subH}</tr></thead>`; // ヘッダー完成
-    html += '<tbody>';
-    
-    const actIds = new Set(state.log.filter(e => e.playerId).map(e => e.playerId).concat(state.onCourtPlayerIds));
-    let hasD = false;
-    
-    data.filter(pD => actIds.has(pD.id)).forEach(pD => {
-      hasD = true;
-      let row = `<tr><td>${escapeHtml(pD.name)}</td>`; // 選手名セル
-      
-      cats.forEach(a => {
-        const res = Array.from(resMap[a] || []);
         
-        // 「機会」のカウントを計算
-        const opportunityCount = pD.actions[a] ? Object.values(pD.actions[a]).reduce((sum, count) => sum + (count || 0), 0) : 0;
-        
-        // 「機会」のセルを追加 (opportunity-cell クラスは任意だが残しておく)
-        row += `<td class="opportunity-cell">${opportunityCount || ''}</td>`;
-        
-        // 各結果のセルを追加
-        res.forEach((r, resIndex) => {
-          const cnt = pD.actions[a] ? (pD.actions[a][r] || 0) : 0;
-          
-          // このカテゴリの最後のセルか判定
-          const isLastCellOfCategory = (resIndex === res.length - 1);
-          const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
-          
-          row += `<td class="${dividerClass}">${cnt || ''}</td>`;
-        });
-      });
-      row += '</tr>';
-      html += row;
-    });
-    
-    html += '</tbody>';
-    if (!hasD) { tab.innerHTML = `<caption>集計</caption><tr><td>対象選手記録なし</td></tr>`; return; }
-    tab.innerHTML = html;
-  }
-
-  // (renderScoreGraph は変更なし)
-  function renderScoreGraph() {
-    const cont = $('#scoreGraphContainer .graph-viewport');
-    cont.innerHTML = '';
-    let tS = 0, oS = 0;
-    
-    const scoreEvts = state.log.filter(e => e.type !== 'sub' && (getScoreChanges(e.isPoint, e.isError, e.action === 'その他得点').teamPointChange > 0 || getScoreChanges(e.isPoint, e.isError, e.action === 'その他得点').opponentPointChange > 0));
-    
-    const columnWidth = 35; // CSSに合わせる
-    const columnsPerRow = 26; // 26列で改行
-    let currentRowDiv = null;
-    let currentColumnCount = 0;
-
-    scoreEvts.forEach((e) => {
-      const isO = e.action === 'その他得点',
-        sc = getScoreChanges(e.isPoint, e.isError, isO);
-      let team = null, pVal = 0, log = '';
-      
-      if (sc.teamPointChange > 0) { team = 'team'; tS++; pVal = tS; } 
-      else if (sc.opponentPointChange > 0) { team = 'opponent'; oS++; pVal = oS; }
-
-      if (team) {
-        // (ログテキストはご要望通り「名前＋アクション」のまま)
-        if (e.type === 'action') {
-          const p = getPlayerById(e.playerId),
-            name = p ? (p.name || `ID:${p.id}`) : '';
-          log = `${escapeHtml(name)}<br>${escapeHtml(e.action)}`; // 名前<br>アクション
-        } else { // その他得点/失点
-          log = 'その他'; // 'その他'のみ
-        }
-        if (e.memo) { log += `<br>(${escapeHtml(e.memo)})`; } // <br>(メモ)
-
-        const col = document.createElement('div');
-        col.classList.add('graph-column');
-        const logT = document.createElement('div');
-        logT.classList.add('graph-log', 'log-top');
-        const pTA = document.createElement('div');
-        pTA.classList.add('graph-point-area');
-        const pBA = document.createElement('div');
-        pBA.classList.add('graph-point-area');
-        const logB = document.createElement('div');
-        logB.classList.add('graph-log', 'log-bottom');
-        
-        if (team === 'team') {
-          logT.innerHTML = log;
-          const pDiv = document.createElement('div');
-          pDiv.classList.add('graph-point', 'team');
-          pDiv.textContent = pVal;
-          pTA.appendChild(pDiv);
-        } else {
-          logB.innerHTML = log;
-          const pDiv = document.createElement('div');
-          pDiv.classList.add('graph-point', 'opponent');
-          pDiv.textContent = pVal;
-          pBA.appendChild(pDiv);
-        }
-        col.appendChild(logT);
-        col.appendChild(pTA);
-        col.appendChild(pBA);
-        col.appendChild(logB);
-
-        if (currentColumnCount === 0 || currentColumnCount >= columnsPerRow) {
-          currentRowDiv = document.createElement('div');
-          currentRowDiv.classList.add('graph-row');
-          cont.appendChild(currentRowDiv);
-          currentColumnCount = 0;
-        }
-        currentRowDiv.appendChild(col);
-        currentColumnCount++;
-      }
-    });
-    
-    if (!scoreEvts.length) cont.innerHTML = '<p style="font-size:12px;color:#888;padding:5px;">得点記録なし</p>';
-  }
-
-  function updateExportInfo() {
-    const dateString = getFormattedDate(state.matchDate);
-    const score = `${state.teamScore}-${state.opponentScore}`;
-    const setString = state.currentSet > 0 ? `${state.currentSet}s` : ''; // 0セット目は空文字
-    const opponentNameString = state.opponentName ? `(vs ${escapeHtml(state.opponentName)})` : '';
-    const infoText = `${dateString} ${setString} ${score} ${opponentNameString}`.trim();
-    $('#exportInfo p').textContent = infoText;
-  }
-
-  function showExportScreen() {
-    updateExportInfo();
-    renderScoreGraph();
-    buildExportTable();
-    
-    const refTA = $('#matchReflection');
-    refTA.value = state.reflection;
-    refTA.removeEventListener('input', handleReflectionInput);
-    refTA.addEventListener('input', handleReflectionInput);
-    autosizeTextarea(refTA);
-    
-    $('#exportModal').classList.remove('hidden');
-    $('#exportModal .modal-content').scrollTop = 0;
-  }
-
-  function handleReflectionInput(e) {
-    state.reflection = e.target.value;
-    autosizeTextarea(e.target);
-    save();
-  }
-
-  // --- Init ---
-  function initUI() {
-    load();
-
-    const libSel = $('#liberoStatus');
-    libSel.value = String(state.onCourtSize || 7);
-    $('#opponentName').value = state.opponentName || '相手チーム';
-    $('#currentSet').value = state.currentSet;
-
-    libSel.onchange = (e) => {
-      const nS = Number(e.target.value);
-      if (nS !== state.onCourtSize) {
-        if (state.log.length > 0 && !confirm('サイズ変更で配置リセット？')) {
-          e.target.value = String(state.onCourtSize);
-          return;
-        }
-        initPlayers(nS, true);
+        currentSubSlotIndex = null;
         save();
         renderAll();
-      }
+        $('#subModal').classList.add('hidden');
     };
 
-    $('#newGame').onclick = () => {
-      if (!confirm('新規試合開始？')) return;
-      initPlayers(state.onCourtSize || 7, false);
-      save();
-      renderAll();
+    $('#subModalCancel').onclick = () => {
+        currentSubSlotIndex = null;
+        $('#subModal').classList.add('hidden');
     };
 
-    $('#showExportScreen').onclick = showExportScreen;
-    $('#exportModalClose').onclick = () => {
-      $('#exportModal').classList.add('hidden');
-    };
-
-    $('#opponentName').oninput = (e) => {
-      state.opponentName = e.target.value;
-      save();
-      if (!$('#exportModal').classList.contains('hidden')) updateExportInfo();
-    };
-
-    $('#currentSet').onchange = (e) => {
-      let v = parseInt(e.target.value);
-      if (isNaN(v) || v < 0) v = 1;
-      state.currentSet = v;
-      e.target.value = v;
-      save();
-      if (!$('#exportModal').classList.contains('hidden')) updateExportInfo();
-    };
-
-    $('#addPlayer').onclick = handleAddPlayer;
-
-    $('#undo').onclick = () => {
-      if (!state.log.length) { alert('取消不可'); return; }
-      state.log.pop();
-      recomputeFromLog();
-      save();
-      renderAll();
-      if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
-    };
-
-    $('#clearLog').onclick = () => {
-      if (!state.log.length) { alert('ログなし'); return; }
-      if (!confirm('ログ全消去？')) return;
-      state.log = [];
-      state.currentSet = 1;
-      $('#currentSet').value = 1;
-      recomputeFromLog();
-      save();
-      renderAll();
-      if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
-    };
-
-    $$('.action').forEach(b => { b.onclick = handleActionButton; });
-
-    $$('.log-tab-btn').forEach(btn => {
-      btn.onclick = (e) => {
-        $$('.log-tab-btn').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
+    // --- Rendering ---
+    function renderPartial() {
         renderLog();
-      };
+        renderSetTabs(); 
+    }
+    
+    function renderAll() {
+        renderPlayers();
+        renderAllPlayersList();
+        renderSetTabs(); 
+        renderLog();
+    }
+    
+    // ★ 修正: タブのスコア表示は自動で最新化され、クリックしてもスコアは更新されないようにする
+    function renderSetTabs() {
+        const cont = $('#set-tabs');
+        if (!cont) return;
+        cont.innerHTML = '';
+        
+        state.matchSets.forEach((set, index) => {
+            const btn = document.createElement('button');
+            btn.classList.add('log-tab-btn', 'set-tab-btn');
+            
+            if (index === state.viewingSetIndex) {
+                 btn.classList.add('active');
+            } 
+            if (index === state.activeSetIndex) {
+                 btn.style.borderBottom = '2px solid orange'; 
+                 btn.title = 'データ入力はここに記録されます';
+            }
+            
+            const score = `${set.teamScore}-${set.opponentScore}`;
+            // クリック時にスコアを更新する処理を削除し、常に最新のセットスコアを表示
+            btn.textContent = `Set ${set.setNumber} (${score})`; 
+            btn.dataset.setIndex = index;
+            
+            btn.onclick = (e) => {
+                state.viewingSetIndex = Number(e.target.dataset.setIndex);
+                renderSetTabs(); 
+                renderLog(); 
+                save(); 
+            };
+            cont.appendChild(btn);
+        });
+
+        const nextBtn = $('#nextSetButton');
+        if (nextBtn) {
+            if (state.matchSets.length >= 3) {
+                nextBtn.textContent = '試合終了';
+                nextBtn.disabled = true;
+            } else {
+                nextBtn.textContent = `次のセットへ (Set ${state.matchSets.length + 1})`;
+                nextBtn.disabled = false;
+            }
+        }
+    }
+
+    function renderPlayers() {
+        const cont = $('#players');
+        cont.innerHTML = '';
+        
+        // onCourtPlayerIds の長さを onCourtSize に合わせる (念のため)
+        while (state.onCourtPlayerIds.length < state.onCourtSize) {
+              state.onCourtPlayerIds.push(0);
+        }
+        if (state.onCourtPlayerIds.length > state.onCourtSize) {
+              state.onCourtPlayerIds.splice(state.onCourtSize);
+        }
+        
+        for (let i = 0; i < state.onCourtSize; i++) {
+            const pId = state.onCourtPlayerIds[i] || 0,
+                p = getPlayerById(pId) || { id: 0, name: '未設定' },
+                div = document.createElement('div');
+                
+            div.className = 'player';
+            div.setAttribute('data-slot-index', i);
+            div.setAttribute('data-player-id', p.id);
+            
+            const dispN = p.name?.trim() || (p.id ? `ID:${p.id}` : '未設定');
+            // リベロ枠の表示は、7人制の最後のスロットに限定
+            const slotN = (state.onCourtSize === 7 && i === 6) ? ' (Li)' : '';
+                
+            div.innerHTML = `<h3 title="${escapeHtml(dispN)} (S${i + 1})">${escapeHtml(dispN)}${slotN}</h3><button class="sub-btn" data-slot-index="${i}">交代</button>`;
+            cont.appendChild(div);
+        }
+        $$('.sub-btn').forEach(b => {
+            b.removeEventListener('click', handleSubstitution);
+            b.addEventListener('click', handleSubstitution);
+        });
+    }
+
+    function renderAllPlayersList() {
+        const cont = $('#allPlayersList'),
+            focusEl = document.activeElement,
+            focusId = focusEl?.classList.contains('edit-player-name') ? focusEl.dataset.id : null,
+            curPos = focusEl?.selectionStart;
+            
+        cont.innerHTML = '';
+        state.allPlayers.forEach(p => {
+            if (!p?.id) return;
+            const div = document.createElement('div');
+            div.className = 'player-register-row';
+            const isOn = state.onCourtPlayerIds.includes(p.id);
+            let status = '';
+            if (isOn) {
+                const idx = state.onCourtPlayerIds.indexOf(p.id);
+                // リベロ表示は7人制の最後のスロットにいる選手のみ
+                if (idx !== -1) status = (state.onCourtSize === 7 && idx === 6) ? '【Li】' : '【コート上】';
+                else status = '【？】';
+            }
+            const rem = !isOn,
+                name = p.name || '';
+            div.innerHTML = `<input type="text" class="edit-player-name player-register-name-input" value="${escapeHtml(name)}" data-id="${p.id}" placeholder="名前" inputmode="text" autocomplete="off"><div style="width:70px;font-size:11px;align-self:center;text-align:right;color:${isOn ? '#2a66b9' : '#888'};">${status}</div><button class="remove-player-btn" data-id="${p.id}" ${rem ? '' : 'disabled'}>削除</button>`;
+            cont.appendChild(div);
+        });
+        
+        $$('.edit-player-name').forEach(el => {
+            el.removeEventListener('input', handlePlayerNameEdit);
+            el.addEventListener('input', handlePlayerNameEdit);
+        });
+        $$('.remove-player-btn').forEach(el => {
+            el.removeEventListener('click', handleRemovePlayer);
+            el.addEventListener('click', handleRemovePlayer);
+        });
+        
+        if (focusId) {
+            const newEl = $(`#allPlayersList input.edit-player-name[data-id="${focusId}"]`);
+            if (newEl) {
+                newEl.focus();
+                if (curPos !== null) {
+                    try { newEl.setSelectionRange(curPos, curPos); } catch (e) {}
+                }
+            }
+        }
+    }
+
+    function handlePlayerNameEdit(e) {
+        const id = Number(e.target.dataset.id),
+            name = e.target.value,
+            p = getPlayerById(id);
+        if (p) {
+            p.name = name;
+            save();
+            renderPlayers();
+        }
+    }
+
+    function renderLog() {
+        const ul = $('#log');
+        ul.innerHTML = '';
+        
+        const viewingSet = getViewingSet();
+        if (!viewingSet) return; 
+        
+        let scores = [], t = 0, o = 0;
+        
+        viewingSet.log.forEach(e => {
+            const isO = e.action === 'その他得点',
+                // 外部定義の getScoreChanges を使用
+                sc = getScoreChanges(e.isPoint, e.isError, isO);
+            t += sc.teamPointChange;
+            o += sc.opponentPointChange;
+            scores.push(e.type !== 'sub' ? `${t}-${o}` : null);
+        });
+
+        const logWithIndex = viewingSet.log.map((e, index) => ({
+            ...e,
+            originalIndex: index 
+        }));
+
+        const tab = $('.log-tab-btn:not(.set-tab-btn).active')?.dataset.tab || 'all';
+        const revLog = logWithIndex.slice().reverse(); 
+        
+        for (const e of revLog) {
+            const hasScore = e.type !== 'sub' && (e.isPoint || e.isError || e.action === 'その他得点' || e.action === 'その他失点');
+            let display = true;
+            if (tab === 'point' && !hasScore) display = false;
+            
+            if (display) {
+                let text = '';
+                if (e.type === 'sub') {
+                    const p = getPlayerById(e.playerId),
+                        name = p ? p.name.trim() || `ID:${p.id}` : '不明';
+                    let slot = `S${e.slotIndex + 1}`;
+                    if (state.onCourtSize === 7 && e.slotIndex === 6) slot = 'L';
+                    text = `[換] ${slot} に ${name} IN`;
+                } else {
+                    const p = getPlayerById(e.playerId),
+                        name = p ? (p.name.trim() || `ID:${p.id}`) : '--';
+                    if (e.action === 'その他得点' || e.action === 'その他失点') {
+                             text = `[${e.action}]`; 
+                    } else {
+                             text = `${name} [${e.action}] ${escapeHtml(e.result || '')}`; 
+                    }
+                    
+                    const score = scores[e.originalIndex];
+                    if (score && hasScore) text += ` (${score})`;
+                }
+                
+                const li = document.createElement('li');
+                
+                li.setAttribute('data-original-index', e.originalIndex);
+                li.setAttribute('data-set-index', state.viewingSetIndex); 
+                
+                if (e.memo) text += ` <span style="font-size:0.9em;color:#555;">(${escapeHtml(e.memo)})</span>`;
+                li.innerHTML = text;
+                ul.appendChild(li); 
+            }
+        }
+    }
+
+    // --- Player Management ---
+    function handleAddPlayer() {
+        const input = $('#newPlayerName'),
+            name = input.value.trim();
+        if (!name) { alert('名前入力必須'); input.focus(); return; }
+        if (state.allPlayers.some(p => p.name === name)) { alert('同名選手あり'); input.focus(); return; }
+        
+        let newId = nextPlayerId;
+        while (state.allPlayers.some(p => p.id === newId)) newId++;
+        nextPlayerId = newId + 1;
+        
+        const newP = { id: newId, name: name, tP: 0, tE: 0 };
+        state.allPlayers.push({ ...newP, totalPoints: 0, totalErrors: 0 });
+        input.value = '';
+        save();
+        renderAll();
+        $('#newPlayerName').focus();
+    }
+
+    function handleRemovePlayer(event) {
+        const id = Number(event.currentTarget.dataset.id),
+            pR = getPlayerById(id);
+        if (!pR) { console.warn(`Cannot remove ID ${id}`); return; }
+        if (state.onCourtPlayerIds.includes(id)) { alert('コート上の選手は削除不可'); return; }
+        if (!confirm(`選手「${escapeHtml(pR.name || `ID:${id}`)}」削除しますか？`)) return;
+        
+        state.allPlayers = state.allPlayers.filter(p => p.id !== id);
+        state.matchSets.forEach(set => {
+            set.log.forEach(e => {
+                if (e.playerId === id) e.playerId = null;
+                if (e.oldPlayerId === id) e.oldPlayerId = null;
+            });
+        });
+
+        recomputeFromLog(); 
+        save();
+        renderAll();
+    }
+
+    // initPlayers 関数 (デフォルトの選手名とコート上の初期配置を再設定)
+    function initPlayers(size, isNewGame = false) {
+        state.onCourtSize = size;
+        
+        // 新規ゲーム時、または全プレイヤーがいない場合、デフォルトプレイヤーを作成
+        if (isNewGame || state.allPlayers.length === 0) {
+            let initialCount = 0;
+            if (size === 7) initialCount = 7; // 7人制（リベロ含む）
+            else initialCount = 6; // 6人制
+            
+            // 既存の onCourtPlayerIds をリセット
+            state.onCourtPlayerIds = [];
+            
+            for (let i = 0; i < initialCount; i++) {
+                const defaultName = (size === 7 && i === 6) ? 'リベロ' : `名前${i + 1}`;
+                
+                // 既に登録されているかチェックし、いなければ新規作成
+                let existingPlayer = state.allPlayers.find(p => p.name === defaultName);
+                let pId;
+
+                if (!existingPlayer) {
+                    let newId = nextPlayerId;
+                    while (state.allPlayers.some(p => p.id === newId)) newId++;
+                    nextPlayerId = newId + 1;
+                    
+                    const newP = { id: newId, name: defaultName, totalPoints: 0, totalErrors: 0 };
+                    state.allPlayers.push(newP);
+                    pId = newId;
+                } else {
+                    pId = existingPlayer.id;
+                }
+                
+                // コート上に配置
+                state.onCourtPlayerIds.push(pId);
+            }
+            
+            // onCourtPlayerIds の長さを onCourtSize に合わせる (念のため)
+            if (state.onCourtPlayerIds.length > state.onCourtSize) {
+                  state.onCourtPlayerIds.splice(state.onCourtSize);
+            }
+        } else {
+            // 既存のプレイヤーがいる場合、コート上の人数だけを調整
+              const currentSize = state.onCourtPlayerIds.length;
+              if (size > currentSize) {
+                // サイズ拡大: 新しい枠は 0 (未設定) で埋める
+                for (let i = currentSize; i < size; i++) {
+                    state.onCourtPlayerIds.push(0); 
+                }
+            } else if (size < currentSize) {
+                // サイズ縮小: 余分な枠を削除
+                state.onCourtPlayerIds.splice(size);
+            }
+        }
+        
+        save();
+        renderPlayers(); 
+    }
+
+
+    // --- Scoring ---
+    function recordOtherLostPoint(memo) {
+        const activeSet = getActiveSet(); 
+        let rT = state.opponentName + 'が得点';
+        activeSet.log.push({ time: Date.now(), type: 'point', playerId: null, action: 'その他失点', result: rT, memo: memo || undefined, isPoint: false, isError: true, isOther: true });
+        recomputeFromLog();
+        save();
+        renderLog();
+        if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
+    }
+
+    function recordOtherPoint(memo) {
+        const activeSet = getActiveSet(); 
+        let rT = state.teamName + 'が得点';
+        activeSet.log.push({ time: Date.now(), type: 'point', playerId: null, action: 'その他得点', result: rT, memo: memo || undefined, isPoint: true, isError: false, isOther: true });
+        recomputeFromLog();
+        save();
+        renderLog();
+        if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
+    }
+
+    function recordAction(pId, act, res, isP, isE, memo = '') {
+        const activeSet = getActiveSet(); 
+        const ev = { time: Date.now(), type: 'action', playerId: pId, action: act, result: res, isPoint: isP, isError: isE, memo: memo || undefined, isOther: false };
+        activeSet.log.push(ev); 
+        recomputeFromLog();
+        save();
+        renderLog();
+        if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
+    }
+
+    function recomputeFromLog() {
+        state.allPlayers.forEach(p => { 
+            if(p){ p.totalPoints = 0; p.totalErrors = 0; } 
+        });
+        
+        for (const set of state.matchSets) {
+            set.teamScore = 0; 
+            set.opponentScore = 0;
+
+            for (const e of set.log) { 
+                if (e.type === 'action' || e.type === 'point') {
+                    const isO = e.action === 'その他得点',
+                        // 外部定義の getScoreChanges を使用
+                        sc = getScoreChanges(e.isPoint, e.isError, isO);
+                    set.teamScore += sc.teamPointChange; 
+                    set.opponentScore += sc.opponentPointChange;
+
+                    if (e.type === 'action' && e.playerId) {
+                        const p = getPlayerById(e.playerId);
+                        if (p) {
+                            if (e.isPoint) p.totalPoints++; 
+                            if (e.isError) p.totalErrors++;
+                        }
+                    }
+                }
+            }
+        }
+        renderSetTabs(); 
+    }
+
+    // --- Export ---
+    // ★ setIndex: -1 (全セット合算), 0 (Set 1のみ), 1 (Set 2のみ), ...
+    function tallyActionsByPlayer(setIndex) {
+        // setIndexが -1 の場合は全セット、それ以外は指定されたインデックスのセットを対象とする
+        const targetSets = setIndex === -1 ? state.matchSets : [state.matchSets[setIndex]].filter(s => s);
+        
+        if (typeof ACTION_CONFIG === 'undefined') {
+            console.error("ACTION_CONFIG が定義されていません。");
+            return { tallyData: [], actionResultsMap: {}, actionCategories: [] };
+        }
+        
+        const dets = [], resMap = {};
+        for (const k in ACTION_CONFIG) {
+            ACTION_CONFIG[k].actions.forEach(a => {
+                dets.push(a);
+                ACTION_CONFIG[k].results.forEach(r => {
+                    if (!resMap[a]) resMap[a] = new Set();
+                    resMap[a].add(r.v);
+                });
+            });
+        }
+        
+        const tally = new Map();
+        state.allPlayers.forEach(p => {
+            if (!p?.id) return;
+            tally.set(p.id, {
+                id: p.id,
+                name: p.name?.trim() || `ID:${p.id}`,
+                actions: dets.reduce((acc, a) => {
+                    acc[a] = {};
+                    Array.from(resMap[a] || []).forEach(r => { acc[a][r] = 0; });
+                    return acc;
+                }, {})
+            });
+        });
+        
+        targetSets.forEach(set => {
+            set.log.forEach(e => {
+                if (e.type === 'action' && e.playerId) {
+                    const a = e.action,
+                        r = e.result,
+                        pT = tally.get(e.playerId);
+                    if (pT?.actions[a]?.hasOwnProperty(r)) pT.actions[a][r]++;
+                }
+            });
+        });
+        
+        return { tallyData: Array.from(tally.values()), actionResultsMap: resMap, actionCategories: dets };
+    }
+
+    // ★ setIndex の値に応じて対象セットを決定し、集計表を作成
+    function buildExportTable(setIndex) {
+        const tab = $('#exportTable'),
+            { tallyData: data, actionResultsMap: resMap, actionCategories: cats } = tallyActionsByPlayer(setIndex);
+            
+        if (!cats.length) { tab.innerHTML = `<caption>集計</caption><tr><td>記録なし</td></tr>`; return; }
+        
+        let html = '<thead><tr><th rowspan="2">選手</th>', 
+            subH = '<tr>'; 
+            
+        cats.forEach(a => {
+            const res = Array.from(resMap[a] || []);
+            if (res.length) {
+                html += `<th colspan="${res.length + 1}">${escapeHtml(a)}</th>`; 
+                
+                subH += `<th class="opportunity-header">機会</th>`; 
+                
+                res.forEach((r, resIndex) => { 
+                    const isLastCellOfCategory = (resIndex === res.length - 1);
+                    const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
+                    subH += `<th class="${dividerClass}">${escapeHtml(r)}</th>`; 
+                });
+            }
+        });
+        html += `</tr>${subH}</tr></thead>`; 
+        html += '<tbody>';
+        
+        // 表示対象の選手リストを生成（全セットのログに登場した選手 + コート上の選手）
+        const actIds = new Set();
+        // 対象セットの決定を修正: tallyActionsByPlayer と同じロジック
+        const targetSets = setIndex === -1 ? state.matchSets : [state.matchSets[setIndex]].filter(s => s);
+        
+        targetSets.forEach(set => {
+            set.log.filter(e => e.playerId).map(e => actIds.add(e.playerId));
+        });
+        state.onCourtPlayerIds.forEach(id => actIds.add(id));
+
+        let hasD = false;
+        
+        data.filter(pD => actIds.has(pD.id)).forEach(pD => {
+            hasD = true;
+            let row = `<tr><td>${escapeHtml(pD.name)}</td>`; 
+            
+            cats.forEach(a => {
+                const res = Array.from(resMap[a] || []);
+                
+                const opportunityCount = pD.actions[a] ? Object.values(pD.actions[a]).reduce((sum, count) => sum + (count || 0), 0) : 0;
+                
+                row += `<td class="opportunity-cell">${opportunityCount || ''}</td>`;
+                
+                res.forEach((r, resIndex) => {
+                    const cnt = pD.actions[a] ? (pD.actions[a][r] || 0) : 0;
+                    
+                    const isLastCellOfCategory = (resIndex === res.length - 1);
+                    const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
+                    
+                    row += `<td class="${dividerClass}">${cnt || ''}</td>`;
+                });
+            });
+            row += '</tr>';
+            html += row;
+        });
+        
+        html += '</tbody>';
+        if (!hasD) { tab.innerHTML = `<caption>集計</caption><tr><td>対象選手記録なし</td></tr>`; return; }
+        tab.innerHTML = html;
+    }
+
+    // ★ setIndex の値に応じて対象セットを決定し、グラフを作成
+    function renderScoreGraph(setIndex) {
+        const contContainer = $('#scoreGraphContainer');
+        const cont = $('#scoreGraphContainer .graph-viewport');
+        if (!contContainer || !cont) return;
+
+        // 【NEW】合算表示（-1）の場合はグラフ全体を非表示にする
+        if (setIndex === -1) {
+            contContainer.style.display = 'none';
+            return;
+        }
+
+        contContainer.style.display = 'block'; // セット表示の場合は表示する
+        cont.innerHTML = '';
+        
+        let allScoreEvents = [];
+        
+        // 対象セットの決定を修正: setIndexが -1 の場合は全セット、それ以外は指定されたインデックスのセット
+        const targetSets = setIndex === -1 ? state.matchSets : [state.matchSets[setIndex]].filter(s => s);
+        
+        let tS = 0, oS = 0;
+        
+        targetSets.forEach((set, idx) => {
+            // セットが切り替わるときはスコアをリセット (全体表示でない場合)
+            if (setIndex !== -1) { tS = 0; oS = 0; } 
+            
+            set.log.forEach(e => {
+                // 外部定義の getScoreChanges を使用
+                if (e.type !== 'sub' && (getScoreChanges(e.isPoint, e.isError, e.action === 'その他得点').teamPointChange > 0 || getScoreChanges(e.isPoint, e.isError, e.action === 'その他得点').opponentPointChange > 0)) {
+                    
+                    const isO = e.action === 'その他得点',
+                        sc = getScoreChanges(e.isPoint, e.isError, isO);
+                        
+                    let team = null, pVal = 0, log = '';
+                    
+                    if (sc.teamPointChange > 0) { team = 'team'; tS++; pVal = tS; } 
+                    else if (sc.opponentPointChange > 0) { team = 'opponent'; oS++; pVal = oS; }
+
+                    if (team) {
+                        if (e.type === 'action') {
+                            const p = getPlayerById(e.playerId),
+                                name = p ? (p.name || `ID:${p.id}`) : '';
+                            log = `${escapeHtml(name)}<br>${escapeHtml(e.action)}`; 
+                        } else { 
+                            log = 'その他'; 
+                        }
+                        if (e.memo) { log += `<br>(${escapeHtml(e.memo)})`; } 
+
+                        const col = document.createElement('div');
+                        col.classList.add('graph-column');
+                        col.setAttribute('title', `Set ${set.setNumber}`); 
+                        
+                        const logT = document.createElement('div');
+                        logT.classList.add('graph-log', 'log-top');
+                        const pTA = document.createElement('div');
+                        pTA.classList.add('graph-point-area');
+                        const pBA = document.createElement('div');
+                        pBA.classList.add('graph-point-area');
+                        const logB = document.createElement('div');
+                        logB.classList.add('graph-log', 'log-bottom');
+                        
+                        if (team === 'team') {
+                            logT.innerHTML = log;
+                            const pDiv = document.createElement('div');
+                            pDiv.classList.add('graph-point', 'team');
+                            pDiv.textContent = pVal;
+                            pTA.appendChild(pDiv);
+                        } else {
+                            logB.innerHTML = log;
+                            const pDiv = document.createElement('div');
+                            pDiv.classList.add('graph-point', 'opponent');
+                            pDiv.textContent = pVal;
+                            pBA.appendChild(pDiv);
+                        }
+                        col.appendChild(logT);
+                        col.appendChild(pTA);
+                        col.appendChild(pBA);
+                        col.appendChild(logB);
+
+                        allScoreEvents.push(col);
+                    }
+                }
+            });
+        });
+        
+        // グラフのレンダリングロジック
+        const columnsPerRow = 26; 
+        let currentRowDiv = null;
+        let currentColumnCount = 0;
+
+        allScoreEvents.forEach(col => {
+            if (currentColumnCount === 0 || currentColumnCount >= columnsPerRow) {
+                currentRowDiv = document.createElement('div');
+                currentRowDiv.classList.add('graph-row');
+                cont.appendChild(currentRowDiv);
+                currentColumnCount = 0;
+            }
+            currentRowDiv.appendChild(col);
+            currentColumnCount++;
+        });
+        
+        if (!allScoreEvents.length) cont.innerHTML = '<p style="font-size:12px;color:#888;padding:5px;">得点記録なし</p>';
+    }
+
+    function updateExportInfo() {
+    const dateString = getFormattedDate(state.matchDate);
+    
+    // スコア情報は含めない
+    const setString = `全${state.matchSets.length}セット`; 
+    const opponentNameString = state.opponentName ? `(vs ${escapeHtml(state.opponentName)})` : '';
+    
+    // 【修正】表示内容を「日付」「全Nセット」「(vs 相手チーム)」に限定
+    const infoText = `${dateString} ${setString} ${opponentNameString}`.trim();
+    const exportInfoP = $('#exportInfo p');
+    if (exportInfoP) exportInfoP.textContent = infoText;
+
+    // セット別スコア表示欄をクリア
+    const setScoresDiv = $('#exportSetScores');
+    if (setScoresDiv) setScoresDiv.innerHTML = '';
+}
+
+    // ★ 修正: エクスポート画面にセット切り替えタブを追加し、表示を制御
+    function showExportScreen() {
+    // 【NEW】エクスポート画面を開いた際、表示対象を最新セットに設定する
+    // ただし、もし既にセット別（0以上）が表示されていれば維持する
+    if (exportViewingSetIndex === -1) {
+        // アクティブセットのインデックス（配列インデックス）
+        exportViewingSetIndex = state.activeSetIndex; 
+    }
+    
+    updateExportInfo();
+    
+    // エクスポート画面用のセットタブをレンダリング
+    renderExportSetTabs(); 
+    
+    // 現在選択中のセット（アクティブセット）のデータを表示
+    const setIndex = exportViewingSetIndex; 
+    
+    // 合算表示でない（最新セットが表示される）ため、グラフが表示される
+    renderScoreGraph(setIndex); 
+    buildExportTable(setIndex);
+
+        
+        // 反省テキストエリアは「全体」タブ選択時はアクティブセットのもの、セット別選択時はそのセットのものにバインド
+        const refTA = $('#matchReflection');
+        const viewingSet = setIndex === -1 ? getActiveSet() : state.matchSets[setIndex];
+        refTA.value = viewingSet ? viewingSet.reflection : ''; 
+        refTA.removeEventListener('input', handleReflectionInput);
+        refTA.addEventListener('input', handleReflectionInput);
+        autosizeTextarea(refTA);
+        
+        $('#exportModal').classList.remove('hidden');
+        $('#exportModal .modal-content').scrollTop = 0;
+    }
+
+    // ★ NEW: エクスポート画面用のセットタブのレンダリング (全体タブを常に含める)
+    function renderExportSetTabs() {
+        const cont = $('#export-set-tabs');
+        if (!cont) return;
+        cont.innerHTML = '';
+        
+        // --- 1. 「全体」タブ ---
+        const allBtn = document.createElement('button');
+        allBtn.classList.add('log-tab-btn', 'export-set-tab-btn');
+        allBtn.textContent = '全体 (合算)';
+        allBtn.dataset.setIndex = -1; // -1 は全体合算を表す
+        if (exportViewingSetIndex === -1) allBtn.classList.add('active');
+        allBtn.onclick = handleExportSetTabClick;
+        cont.appendChild(allBtn);
+        
+        // --- 2. 各セットのタブ ---
+        state.matchSets.forEach((set, index) => {
+            const btn = document.createElement('button');
+            btn.classList.add('log-tab-btn', 'export-set-tab-btn');
+            const score = `${set.teamScore}-${set.opponentScore}`;
+            // setIndex は 0, 1, 2, ... とセットの配列インデックスを使う
+            btn.textContent = `Set ${set.setNumber} のみ (${score})`;
+            btn.dataset.setIndex = index;
+            if (index === exportViewingSetIndex) btn.classList.add('active');
+            
+            btn.onclick = handleExportSetTabClick;
+            cont.appendChild(btn);
+        });
+    }
+
+    // ★ NEW: エクスポート画面のセットタブクリック処理
+    function handleExportSetTabClick(e) {
+        const newIndex = Number(e.target.dataset.setIndex);
+        exportViewingSetIndex = newIndex;
+        
+        // アクティブなタブを切り替える
+        $$('.export-set-tab-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        
+        // データとグラフを更新
+        renderScoreGraph(newIndex);
+        buildExportTable(newIndex);
+        
+        // 反省テキストエリアも切り替える
+        const refTA = $('#matchReflection');
+        // 「全体」タブが選ばれた場合、アクティブセットの反省を見る
+        const viewingSet = newIndex === -1 ? getActiveSet() : state.matchSets[newIndex];
+        refTA.value = viewingSet ? viewingSet.reflection : '';
+        autosizeTextarea(refTA);
+    }
+    
+    function handleReflectionInput(e) {
+        // 「全体」タブ選択時（-1）は、現在入力中のセット（activeSetIndex）に保存
+        const setIndex = exportViewingSetIndex === -1 ? state.activeSetIndex : exportViewingSetIndex;
+        const targetSet = state.matchSets[setIndex];
+        if (targetSet) targetSet.reflection = e.target.value; 
+        autosizeTextarea(e.target);
+        save();
+    }
+    
+   // --- Set Navigation ---
+    function handleNextSet() {
+        if (state.matchSets.length >= 3) return; 
+
+        const modal = $('#nextSetConfirmModal');
+        if (!modal) {
+            console.error('#nextSetConfirmModal が見つかりません。HTMLに追加してください。');
+            // (HTMLがない場合のフォールバック)
+            if (!confirm(`次のセット（Set ${state.matchSets.length + 1}）に進みますか？`)) {
+                return;
+            } else {
+                // フォールバックでOKが押された場合（モーダルがない場合）の処理
+                const newSet = createNewSetData(state.matchSets.length + 1);
+                state.matchSets.push(newSet);
+                state.activeSetIndex = state.matchSets.length - 1;
+                state.viewingSetIndex = state.activeSetIndex; 
+                recomputeFromLog(); 
+                save();
+                renderAll();
+                return;
+            }
+        }
+        
+        // モーダル内のメッセージを更新
+        const msgEl = $('#nextSetConfirmMessage'); 
+        if (msgEl) {
+            msgEl.textContent = `次のセット（Set ${state.matchSets.length + 1}）に進みますか？`;
+        }
+        
+        // ★重要★ モーダルを表示するだけで、ここではセットを進めない
+        modal.classList.remove('hidden');
+    }
+
+/**
+ * 試合の全データ（stateオブジェクト全体）をJSONファイルとしてダウンロードさせる関数
+ */
+function downloadFullDataJSON() {
+    // 1. ダウンロードしたいデータ（save() と同じ構造）をJSON文字列に変換
+    const dataToExport = {
+        ...state,
+        // state に含まれないグローバル変数を追加
+        nextPlayerId: nextPlayerId 
+    };
+    
+    const jsonData = JSON.stringify(dataToExport, null, 2); 
+    
+    // 2. Blob（バイナリラージオブジェクト）を作成
+    const blob = new Blob([jsonData], { type: 'application/json;charset=utf-8;' });
+    
+    // 3. ダウンロード用のファイル名を設定
+    // ファイル名例: VolleyLog_20251102_vs_相手チーム名.json
+    const dateStr = getFormattedDate(state.matchDate).replace(/[^0-9]/g, '');
+    const opponent = (state.opponentName || 'opponent').replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '_'); // 日本語も考慮
+    const filename = `VolleyLog_${dateStr}_vs_${opponent}.json`;
+
+    // 4. ダウンロード処理を実行
+    if (navigator.msSaveBlob) {
+        // IE 10+ の場合
+        navigator.msSaveBlob(blob, filename);
+    } else {
+        // 標準的なブラウザの場合
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+
+        document.body.appendChild(link);
+        link.click();
+        
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url); // メモリ解放
+    }
+}
+function downloadExportTableCSV() {
+    const table = document.getElementById('exportTable');
+    if (!table) {
+        alert('集計表が見つかりません。');
+        return;
+    }
+
+    let csv = [];
+    
+    // 1. ヘッダー行を処理し、1行の統合ヘッダーを作成
+    const headerRows = table.querySelectorAll('thead tr');
+    
+    if (headerRows.length < 2) {
+        // ヘッダーが1行の場合（処理を簡略化）
+        const singleHeaderRow = [];
+        headerRows[0].querySelectorAll('th').forEach(th => {
+            let text = th.textContent.replace(/\s+/g, ' ').trim();
+            singleHeaderRow.push(`"${text}"`);
+        });
+        csv.push(singleHeaderRow.join(','));
+    } else {
+        // 多段ヘッダー（2行）の場合の処理
+        const mainActions = headerRows[0].querySelectorAll('th'); // サーブ, スパイク, ...
+        const subItems = headerRows[1].querySelectorAll('th'); // 機会, 得点, ミス, ...
+        
+        let combinedHeader = [];
+        let subItemIndex = 0;
+
+        // 選手名の列（最初のth）を特別に追加
+        const playerHeader = mainActions[0] ? mainActions[0].textContent.replace(/\s+/g, ' ').trim() : '';
+        combinedHeader.push(`"${playerHeader}"`);
+
+        // 2行目以降のメインアクション（サーブ、スパイクなど）を処理
+        // 最初のthは選手名なのでスキップ
+        for (let i = 1; i < mainActions.length; i++) {
+            const actionTh = mainActions[i];
+            const actionName = actionTh.textContent.replace(/\s+/g, ' ').trim();
+            // colspanを取得（結合セルの数）
+            const colspan = parseInt(actionTh.getAttribute('colspan') || '1'); 
+
+            // colspanの数だけ、対応する2行目のサブアイテムと結合
+            for (let j = 0; j < colspan; j++) {
+                const subItemTh = subItems[subItemIndex];
+                if (subItemTh) {
+                    const subItemName = subItemTh.textContent.replace(/\s+/g, ' ').trim();
+                    // アクション名 + サブ項目名で新しいヘッダーを作成
+                    combinedHeader.push(`"${actionName} ${subItemName}"`);
+                }
+                subItemIndex++;
+            }
+        }
+        csv.push(combinedHeader.join(','));
+    }
+
+    // --- 2. ボディ（データ）行の抽出 (ここは変更なし) ---
+    const dataRows = table.querySelectorAll('tbody tr');
+    dataRows.forEach(row => {
+        const rowData = [];
+        row.querySelectorAll('td').forEach(td => {
+            let text = td.textContent.replace(/\s+/g, ' ').trim();
+            rowData.push(`"${text}"`);
+        });
+        csv.push(rowData.join(','));
     });
+    // --------------------------------------------------
 
-    $('#memoModalCancel').onclick = () => {
-      $('#memoModal').classList.add('hidden');
-      currentMemoAction = null;
+    const csvString = csv.join('\n');
+
+    // 3. ファイル名とBlobの準備 (変更なし)
+    const dateStr = getFormattedDate(state.matchDate).replace(/[^0-9]/g, '');
+    const opponent = state.opponentName.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '_');
+    
+    // 現在表示中のセットをファイル名に含める
+    const setLabel = exportViewingSetIndex === -1 ? 'AllSets' : `Set${state.matchSets[exportViewingSetIndex]?.setNumber || 'Unknown'}`;
+    
+    const filename = `VolleyStats_${setLabel}_${dateStr}_vs_${opponent}.csv`;
+
+    // CSVの文字化けを防ぐためBOM（Byte Order Mark）を付与
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
+    const blob = new Blob([bom, csvString], { type: 'text/csv;charset=utf-8;' });
+
+    // 4. ダウンロード処理を実行 (変更なし)
+    if (navigator.msSaveBlob) {
+        navigator.msSaveBlob(blob, filename);
+    } else {
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+
+        document.body.appendChild(link);
+        link.click();
+        
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+}
+/**
+ * JSONファイルを選択し、データを読み込んで表を更新する関数
+ * @param {Event} event - ファイル選択イベント
+ */
+function importDataFromJSON(event) {
+    const file = event.target.files[0];
+    if (!file) {
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+        try {
+            const jsonText = e.target.result;
+            const p = JSON.parse(jsonText); // p (importedData)
+
+            // --- データの検証（load() 関数を参考） ---
+            if (!p || typeof p.teamName === 'undefined' || !Array.isArray(p.allPlayers)) {
+                alert('読み込まれたファイルは、有効なVolleyLogデータ形式ではありません。');
+                event.target.value = null; // ファイル選択をリセット
+                return;
+            }
+
+            if (!confirm('現在のデータを上書きし、ファイルからデータをインポートしますか？（この操作は元に戻せません）')) {
+                event.target.value = null; // ファイル選択をリセット
+                return;
+            }
+
+            // --- データの反映 (load() 関数のロジックを流用) ---
+            
+            // 1. 基本情報のロード
+            state.teamName = p.teamName || state.teamName;
+            state.opponentName = p.opponentName || state.opponentName;
+            state.matchDate = p.matchDate || state.matchDate;
+            state.onCourtSize = p.onCourtSize || 7; 
+            state.allPlayers = p.allPlayers || state.allPlayers;
+            state.onCourtPlayerIds = p.onCourtPlayerIds || [];
+            // nextPlayerId をインポートデータ (p) からロード
+            nextPlayerId = p.nextPlayerId || state.allPlayers.length + 1;
+
+            // 2. セットデータのロード
+            state.matchSets = p.matchSets || [];
+            if (state.matchSets.length === 0) {
+                // 旧バージョンからの移行処理（または空の場合の初期化）
+                if (p.log || p.teamScore || p.opponentScore) {
+                    const set1 = createNewSetData(1);
+                    set1.log = p.log || [];
+                    set1.teamScore = p.teamScore || 0;
+                    set1.opponentScore = p.opponentScore || 0;
+                    set1.reflection = p.reflection || '';
+                    state.matchSets.push(set1);
+                } else {
+                    state.matchSets.push(createNewSetData(1));
+                }
+            }
+            
+            // 3. インデックスの復元
+            state.activeSetIndex = p.activeSetIndex ?? state.matchSets.length - 1;
+            state.viewingSetIndex = p.viewingSetIndex ?? state.activeSetIndex; 
+            
+            // 4. ログからスコアや選手データを再計算
+            recomputeFromLog();
+            
+            // 5. 新しいデータを localStorage に保存
+            save();
+            
+            // 6. UIを更新 (load() の後処理に相当)
+            const libSel = $('#liberoStatus');
+            if (libSel) libSel.value = String(state.onCourtSize || 7);
+            if ($('#opponentName')) $('#opponentName').value = state.opponentName || '相手チーム';
+            renderAll(); 
+            // エクスポート画面が開いていたら更新
+            if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
+
+            alert('データのインポートが完了しました。');
+            
+        } catch (error) {
+            console.error('JSON解析エラー:', error);
+            alert('ファイルの読み込み中にエラーが発生しました。ファイルが破損しているか、JSON形式が正しくありません。');
+        } finally {
+            // 成功・失敗にかかわらずファイル選択をリセット
+            event.target.value = null;
+        }
+    };
+
+    // ファイルをテキストとして読み込む
+    reader.readAsText(file);
+}
+    // --- Init ---
+    function initUI() {
+        load();
+
+        const libSel = $('#liberoStatus');
+        libSel.value = String(state.onCourtSize || 7);
+        $('#opponentName').value = state.opponentName || '相手チーム';
+        
+        libSel.onchange = (e) => {
+            const nS = Number(e.target.value);
+            if (nS !== state.onCourtSize) {
+                // サイズ変更時、ログがある場合は警告するが、選手リストはリセットしない
+                if (state.matchSets.some(set => set.log.length > 0) && !confirm('サイズを変更しますが、よろしいですか？（コート上のポジションは再配置されます）')) {
+                    e.target.value = String(state.onCourtSize);
+                    return;
+                }
+                
+                // initPlayers の呼び出し (サイズ変更時は isNewGame=false で呼ぶ)
+                initPlayers(nS, false); 
+                save();
+                renderAll();
+            }
+        };
+
+        const newGameBtn = $('#newGame');
+        const newGameModal = $('#newGameConfirmModal');
+        const newGameConfirmBtn = $('#newGameConfirm');
+        const newGameCancelBtn = $('#newGameCancel');
+
+        newGameBtn.onclick = () => {
+            newGameModal.classList.remove('hidden');
+        };
+
+        newGameConfirmBtn.onclick = () => {
+            newGameModal.classList.add('hidden'); 
+            
+            state.activeSetIndex = 0;
+            state.viewingSetIndex = 0;
+            state.matchSets = [createNewSetData(1)];
+            
+            // 新規ゲーム開始時: プレイヤーリストとコートを初期化
+            state.allPlayers = []; 
+            initPlayers(state.onCourtSize, true); // trueで初期プレイヤーを再生成
+
+            state.allPlayers.forEach(p => {
+                p.totalPoints = 0;
+                p.totalErrors = 0; 
+            });
+            
+            // ★ 初期セット表示をリセット
+            exportViewingSetIndex = -1; 
+            
+            save();
+            renderAll();
+        };
+
+        newGameCancelBtn.onclick = () => {
+            newGameModal.classList.add('hidden'); 
+        };
+const nextSetModal = $('#nextSetConfirmModal');
+        const nextSetConfirmBtn = $('#nextSetConfirm'); // <button id="nextSetConfirm">
+        const nextSetCancelBtn = $('#nextSetCancel');   // <button id="nextSetCancel">
+
+        if (nextSetModal && nextSetConfirmBtn && nextSetCancelBtn) {
+            nextSetConfirmBtn.onclick = () => {
+                nextSetModal.classList.add('hidden');
+                
+                // handleNextSet から移動させた処理 (confirm() が true だった場合の処理)
+                if (state.matchSets.length >= 3) return; // 念のため再チェック
+
+                const newSet = createNewSetData(state.matchSets.length + 1);
+                state.matchSets.push(newSet);
+                
+                state.activeSetIndex = state.matchSets.length - 1;
+                state.viewingSetIndex = state.activeSetIndex; 
+
+                recomputeFromLog(); 
+                save();
+                renderAll();
+            };
+
+            nextSetCancelBtn.onclick = () => {
+                nextSetModal.classList.add('hidden');
+            };
+        }
+        if ($('#showExportScreen')) $('#showExportScreen').onclick = showExportScreen;
+    if ($('#exportModalClose')) $('#exportModalClose').onclick = () => {
+        if ($('#exportModal')) $('#exportModal').classList.add('hidden');
+    };
+    
+    // 【NEW】JSONダウンロードボタンにイベントリスナーを設定
+    if ($('#downloadJsonButton')) {
+        $('#downloadJsonButton').onclick = downloadFullDataJSON;
+    }
+    const importInput = $('#importJsonInput');
+    if (importInput) {
+        importInput.addEventListener('change', importDataFromJSON);
+        
+        // (HTML側に <button id="importJsonButton">インポート</button> があると仮定)
+        const importButton = $('#importJsonButton');
+        if (importButton) {
+            importButton.onclick = () => {
+                importInput.value = null; // 毎回同じファイルを選択できるようにリセット
+                importInput.click(); // ボタンクリックでファイル選択ダイアログを開く
+            };
+        }
+    }
+    if ($('#downloadCsvButton')) {
+        $('#downloadCsvButton').onclick = downloadExportTableCSV;
+    }
+        const nextSetBtn = $('#nextSetButton');
+        if (nextSetBtn) nextSetBtn.onclick = handleNextSet; 
+
+        $('#opponentName').oninput = (e) => {
+            state.opponentName = e.target.value;
+            save();
+            if (!$('#exportModal').classList.contains('hidden')) updateExportInfo();
+        };
+
+        $('#addPlayer').onclick = handleAddPlayer;
+
+        $('#undo').onclick = () => {
+            const activeSet = getActiveSet();
+            if (!activeSet?.log.length) { alert('取消不可'); return; }
+            activeSet.log.pop();
+            recomputeFromLog();
+            save();
+            renderAll();
+            if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
+        };
+
+
+        $$('.action').forEach(b => { b.onclick = handleActionButton; });
+
+        $$('.log-tab-btn:not(.set-tab-btn)').forEach(btn => {
+            btn.onclick = (e) => {
+                $$('.log-tab-btn:not(.set-tab-btn)').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                renderLog();
+            };
+        });
+        
+        // --- Log Event Delegation (ログ編集の呼び出し) ---
+        $('#log').addEventListener('click', (e) => {
+            const li = e.target.closest('li');
+            if (!li) return;
+            
+            const index = li.getAttribute('data-original-index');
+            const setIndex = li.getAttribute('data-set-index'); 
+            
+            if (index === null || setIndex === null) return; 
+            
+            const originalIndex = Number(index);
+            const targetSetIndex = Number(setIndex);
+
+            if (targetSetIndex !== state.activeSetIndex) {
+                alert('編集できるのは、現在入力中のセットのログのみです。');
+                return;
+            }
+            
+            const logEntry = state.matchSets[targetSetIndex].log[originalIndex];
+            
+            if (logEntry?.type === 'sub') {
+                alert('交代ログは編集できません。');
+                return;
+            }
+            
+            showLogEditModal(originalIndex); 
+        });
+        // ----------------------------------------------------
+
+        $('#memoModalCancel').onclick = () => {
+            $('#memoModal').classList.add('hidden');
+            currentMemoAction = null;
+        };
+
+        $('#memoModalConfirm').onclick = () => {
+            const memo = $('#memoInput').value.trim();
+            if (currentMemoAction === 'その他得点') recordOtherPoint(memo);
+            else if (currentMemoAction === 'その他失点') recordOtherLostPoint(memo);
+            $('#memoModal').classList.add('hidden');
+            currentMemoAction = null;
+        };
+
+        const refTA = $('#matchReflection');
+        refTA.addEventListener('input', () => autosizeTextarea(refTA));
+        setTimeout(() => autosizeTextarea(refTA), 50);
+
+        renderAll();
+
+    // ログ編集モーダル関連関数 
+    function showLogEditModal(originalIndex) {
+        const activeSet = getActiveSet();
+        const ev = activeSet.log[originalIndex];
+
+        if (!ev || ev.type === 'sub') {
+            alert('このログは編集できません。');
+            return;
+        }
+        
+        currentLogEditIndex = originalIndex;
+        currentMemoAction = null;
+        
+        const modal = $('#logEditModal');
+        const actionTypeDiv = $('#logEditActionType');
+        const pList = $('#logEdit-player-select-list');
+        const rList = $('#logEdit-result-select-list');
+        
+        const isOtherPointAction = ev.action === 'その他得点' || ev.action === 'その他失点';
+
+        $('#logEditModalTitle').textContent = `Set ${activeSet.setNumber} アクション編集 (#${activeSet.log.length - originalIndex})`;
+        actionTypeDiv.textContent = `${ev.action} (${isOtherPointAction ? '共通' : '個人'})`;
+
+        $('#logEditPlayerRow').style.display = 'block';
+        
+        const onP = state.allPlayers.filter(p => p.id); 
+        pList.innerHTML = onP.map(p => {
+            const isL = state.onCourtSize === 7 && state.onCourtPlayerIds.indexOf(p.id) === 6; 
+            const suf = isL ? ' (Li)' : '';
+            const name = p.name?.trim() || `ID:${p.id}`;
+            const checked = p.id === ev.playerId ? 'checked' : '';
+            return `<label class="choice-label"><input type="radio" name="logEditPlayerId" value="${p.id}" ${checked}><span>${escapeHtml(name)}${suf}</span></label>`;
+        }).join('');
+        
+        if (isOtherPointAction) {
+            const isUnchecked = ev.playerId === null || ev.playerId === undefined ? 'checked' : '';
+            pList.innerHTML = `<label class="choice-label" style="background:#fdeeee;"><input type="radio" name="logEditPlayerId" value="0" ${isUnchecked}><span>選手を特定しない (共通得点)</span></label>` + pList.innerHTML;
+        }
+        if (!pList.innerHTML) pList.innerHTML = '<p>選手なし</p>';
+
+
+        if (ev.type === 'action' && !isOtherPointAction) {
+            $('#logEditResultRow').style.display = 'block';
+            // 外部定義の getActionResults を使用
+            const res = getActionResults(ev.action);
+            rList.innerHTML = res.map(r => {
+                const checked = r.v === ev.result ? 'checked' : '';
+                return `<label class="choice-label"><input type="radio" name="logEditResult" value="${r.v}" data-is-point="${r.p}" data-is-error="${r.e}" ${checked}><span>${escapeHtml(r.v)}</span></label>`;
+            }).join('');
+        } else {
+            $('#logEditResultRow').style.display = 'none'; 
+        }
+
+        $('#logEditMemoInput').value = ev.memo || '';
+        $('#logEditOriginalIndex').value = originalIndex; 
+        
+        modal.classList.remove('hidden');
+    }
+
+
+    // --- ログ編集イベントハンドラ (initUI関数内) ---
+
+    $('#logEditCancel').onclick = () => {
+        $('#logEditModal').classList.add('hidden');
+        currentLogEditIndex = null;
+        currentMemoAction = null; 
     };
 
-    $('#memoModalConfirm').onclick = () => {
-      const memo = $('#memoInput').value.trim();
-      if (currentMemoAction === 'その他得点') recordOtherPoint(memo);
-      else if (currentMemoAction === 'その他失点') recordOtherLostPoint(memo);
-      $('#memoModal').classList.add('hidden');
-      currentMemoAction = null;
+    $('#logEditConfirm').onclick = () => {
+        const originalIndex = Number($('#logEditOriginalIndex').value);
+        const activeSet = getActiveSet(); 
+        const ev = activeSet.log[originalIndex];
+        if (!ev || ev.type === 'sub') { return; }
+
+        let updatedEv = { ...ev };
+
+        const form = $('#logEditForm');
+        const selP = form.querySelector('input[name="logEditPlayerId"]:checked');
+        const selR = form.querySelector('input[name="logEditResult"]:checked');
+        const memo = $('#logEditMemoInput').value.trim();
+
+        const isCommonAction = updatedEv.isOther;
+        
+        if (ev.type === 'action' && !isCommonAction && !selP) { alert('選手選択必須'); return; }
+        // isCommonAction の場合、selRは存在しない（非表示）ためチェックをスキップ
+        if (ev.type === 'action' && !isCommonAction && !selR) { alert('結果選択必須'); return; }
+
+        if (selP) {
+             updatedEv.playerId = Number(selP.value);
+        } else if (isCommonAction) {
+             updatedEv.playerId = (selP?.value === "0" || !selP) ? null : Number(selP?.value);
+        }
+
+        if (selR) {
+             updatedEv.result = selR.value;
+             updatedEv.isPoint = selR.dataset.isPoint === 'true';
+             updatedEv.isError = selR.dataset.isError === 'true';
+        } 
+
+        updatedEv.memo = memo || undefined;
+
+        activeSet.log[originalIndex] = updatedEv; 
+        
+        $('#logEditModal').classList.add('hidden'); 
+        currentLogEditIndex = null;
+        currentMemoAction = null; 
+
+        setTimeout(() => {
+             recomputeFromLog(); 
+             save();
+             renderAll();
+             if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
+        }, 0); 
+        
     };
 
-    const refTA = $('#matchReflection');
-    refTA.addEventListener('input', () => autosizeTextarea(refTA));
-    setTimeout(() => autosizeTextarea(refTA), 50);
+    $('#logEditDelete').onclick = () => {
+        const originalIndex = Number($('#logEditOriginalIndex').value);
+        const activeSet = getActiveSet(); 
+        const ev = activeSet.log[originalIndex];
 
-    renderAll();
-  }
-  
-  document.addEventListener('DOMContentLoaded', initUI);
-})();
+        if (!confirm(`アクション「${ev.action}」のログを削除しますか？`)) return;
+        
+        activeSet.log.splice(originalIndex, 1);
+        
+        $('#logEditModal').classList.add('hidden');
+        currentLogEditIndex = null;
+        currentMemoAction = null; 
+
+        setTimeout(() => {
+             recomputeFromLog();
+             save();
+             renderAll();
+             if (!$('#exportModal').classList.contains('hidden')) showExportScreen(); 
+        }, 0);
+    };
+    // ----------------------------------------------------
+    }
+    
+    document.addEventListener('DOMContentLoaded', initUI);
+
+
 </script>
+
 </body>
 </html>
