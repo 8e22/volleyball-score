@@ -558,6 +558,14 @@
     color: #2a66b9;
 }
 
+.modal-actions button {
+  width: 50%; 
+  padding: 2px 3px; 
+  font-size: 14px; 
+  font-weight: bold;
+  border-radius: 5px;
+  cursor: pointer; 
+}
 </style>
 </head>
 <body>
@@ -574,8 +582,8 @@
             <option value="6">リベロなし (6人)</option>
           </select>
         </label>
-         <input type="file" id="jsonFileInput" accept=".json" style="display:none;" onchange="importDataFromJSON(event)">
-        <button onclick="document.getElementById('jsonFileInput').click()">インポート(JSON)</button>
+         <input type="file" id="jsonFileInput" accept=".json" style="display:none;">
+<button id="importJsonButton">インポート(JSON)</button>
         <button id="newGame">新しい試合</button>
         <button id="showExportScreen">集計</button>
       </div>
@@ -780,20 +788,18 @@
 </div>
 <div id="importJsonModal" class="modal hidden">
     <div class="modal-content" style="width: 90%; max-width: 500px;">
-        <h3>JSONデータからインポート</h3>
-        <p style="font-size: 13px; color: #555; margin-bottom: 15px;">
-            エクスポートしたJSONファイルの中身をすべてコピーし、下の欄に貼り付けて「インポート実行」を押してください。
+        <h3 style="margin-top: 5px; margin-bottom: 15px;">JSONデータからインポート</h3>
+        <p style="font-size: 13px; color: #555;margin-bottom: 15px;line-height: 1.5;">エクスポートしたJSONファイルの中身をすべてコピーし、下の欄に貼り付けて「インポート」を押してください。
         </p>
         <textarea 
             id="importJsonTextarea" 
             rows="8" 
-            placeholder="ここにJSONデータを貼り付け..." 
-            style="width: 100%; font-size: 12px; margin-top: 5px;"></textarea>
-        <div class="modal-actions" style="margin-top: 15px;">
-            <button id="importJsonModalClose" class="btn-secondary">キャンセル</button>
-            <button id="executeImportButton" class="btn-primary" style="background-color: #2a66b9;">
-                インポート実行
-            </button>
+            placeholder="ここにJSONデータを貼り付け..."
+            style="width: 100%; box-sizing: border-box; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </textarea>
+        <div class="modal-actions" style="margin-top: 20px; grid-template-columns: 1fr 1fr;  gap: 10px;">
+            <button id="importJsonModalClose" class="btn-secondary" style="border-color:#aeacac">キャンセル</button>
+            <button id="executeImportButton" class="btn-primary" style="background-color: #d6f1ff;border-color: #94dafd;">インポート</button>
         </div>
     </div>
 </div>
@@ -1993,93 +1999,76 @@ function downloadExportTableCSV() {
     }
 }
 /**
- * JSONファイルを選択し、データを読み込んで表を更新する関数
- * @param {Event} event - ファイル選択イベント
- */
-function importDataFromJSON(event) {
-    const file = event.target.files[0];
-    if (!file) {
-        return;
-    }
+ * ★ 2. importDataFromJSON をこの関数に置き換え ★
+ * JSONテキストを読み込んでアプリの状態を復元する関数
+ * (テキストエリアからのペーストを想定)
+ * @param {string} jsonText - インポートするJSONデータ文字列
+ */
+function importFromText(jsonText) {
+    try {
+        const p = JSON.parse(jsonText); // p (importedData)
 
-    const reader = new FileReader();
-
-    reader.onload = function(e) {
-        try {
-            const jsonText = e.target.result;
-            const p = JSON.parse(jsonText); // p (importedData)
-
-            // --- データの検証（load() 関数を参考） ---
-            if (!p || typeof p.teamName === 'undefined' || !Array.isArray(p.allPlayers)) {
-                alert('読み込まれたファイルは、有効なVolleyLogデータ形式ではありません。');
-                event.target.value = null; // ファイル選択をリセット
-                return;
-            }
-
-            if (!confirm('現在のデータを上書きし、ファイルからデータをインポートしますか？（この操作は元に戻せません）')) {
-                event.target.value = null; // ファイル選択をリセット
-                return;
-            }
-
-            // --- データの反映 (load() 関数のロジックを流用) ---
-            
-            // 1. 基本情報のロード
-            state.teamName = p.teamName || state.teamName;
-            state.opponentName = p.opponentName || state.opponentName;
-            state.matchDate = p.matchDate || state.matchDate;
-            state.onCourtSize = p.onCourtSize || 7; 
-            state.allPlayers = p.allPlayers || state.allPlayers;
-            state.onCourtPlayerIds = p.onCourtPlayerIds || [];
-            // nextPlayerId をインポートデータ (p) からロード
-            nextPlayerId = p.nextPlayerId || state.allPlayers.length + 1;
-
-            // 2. セットデータのロード
-            state.matchSets = p.matchSets || [];
-            if (state.matchSets.length === 0) {
-                // 旧バージョンからの移行処理（または空の場合の初期化）
-                if (p.log || p.teamScore || p.opponentScore) {
-                    const set1 = createNewSetData(1);
-                    set1.log = p.log || [];
-                    set1.teamScore = p.teamScore || 0;
-                    set1.opponentScore = p.opponentScore || 0;
-                    set1.reflection = p.reflection || '';
-                    state.matchSets.push(set1);
-                } else {
-                    state.matchSets.push(createNewSetData(1));
-                }
-            }
-            
-            // 3. インデックスの復元
-            state.activeSetIndex = p.activeSetIndex ?? state.matchSets.length - 1;
-            state.viewingSetIndex = p.viewingSetIndex ?? state.activeSetIndex; 
-            
-            // 4. ログからスコアや選手データを再計算
-            recomputeFromLog();
-            
-            // 5. 新しいデータを localStorage に保存
-            save();
-            
-            // 6. UIを更新 (load() の後処理に相当)
-            const libSel = $('#liberoStatus');
-            if (libSel) libSel.value = String(state.onCourtSize || 7);
-            if ($('#opponentName')) $('#opponentName').value = state.opponentName || '相手チーム';
-            renderAll(); 
-            // エクスポート画面が開いていたら更新
-            if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
-
-            alert('データのインポートが完了しました。');
-            
-        } catch (error) {
-            console.error('JSON解析エラー:', error);
-            alert('ファイルの読み込み中にエラーが発生しました。ファイルが破損しているか、JSON形式が正しくありません。');
-        } finally {
-            // 成功・失敗にかかわらずファイル選択をリセット
-            event.target.value = null;
+        // --- データの検証 ---
+        if (!p || typeof p.teamName === 'undefined' || !Array.isArray(p.allPlayers)) {
+            alert('読み込まれたデータは、有効なVolleyLogデータ形式ではありません。');
+            return false; // 失敗
         }
-    };
 
-    // ファイルをテキストとして読み込む
-    reader.readAsText(file);
+        // confirm() はGoogleサイトで動作しない可能性があるため、alert() で代用
+        alert('現在のデータを上書きし、インポートを実行します。');
+
+
+        // --- データの反映 (load() 関数のロジックを流用) ---
+        
+        // 1. 基本情報のロード
+        state.teamName = p.teamName || state.teamName;
+        state.opponentName = p.opponentName || state.opponentName;
+        state.matchDate = p.matchDate || state.matchDate;
+        state.onCourtSize = p.onCourtSize || 7; 
+        state.allPlayers = p.allPlayers || state.allPlayers;
+        state.onCourtPlayerIds = p.onCourtPlayerIds || [];
+        nextPlayerId = p.nextPlayerId || state.allPlayers.length + 1;
+
+        // 2. セットデータのロード
+        state.matchSets = p.matchSets || [];
+        if (state.matchSets.length === 0) {
+            if (p.log || p.teamScore || p.opponentScore) {
+                const set1 = createNewSetData(1);
+                set1.log = p.log || [];
+                set1.teamScore = p.teamScore || 0;
+                set1.opponentScore = p.opponentScore || 0;
+                set1.reflection = p.reflection || '';
+                state.matchSets.push(set1);
+            } else {
+                state.matchSets.push(createNewSetData(1));
+            }
+        }
+        
+        // 3. インデックスの復元
+        state.activeSetIndex = p.activeSetIndex ?? state.matchSets.length - 1;
+        state.viewingSetIndex = p.viewingSetIndex ?? state.activeSetIndex; 
+        
+        // 4. ログからスコアや選手データを再計算
+        recomputeFromLog();
+        
+        // 5. 新しいデータを localStorage に保存
+        save();
+        
+        // 6. UIを更新
+        const libSel = $('#liberoStatus');
+        if (libSel) libSel.value = String(state.onCourtSize || 7);
+        if ($('#opponentName')) $('#opponentName').value = state.opponentName || '相手チーム';
+        renderAll(); 
+        if (!$('#exportModal').classList.contains('hidden')) showExportScreen();
+
+        alert('データのインポートが完了しました。');
+        return true; // 成功
+        
+    } catch (error) {
+        console.error('JSON解析エラー:', error);
+        alert('データの読み込み中にエラーが発生しました。貼り付けたデータが破損しているか、JSON形式が正しくありません。');
+        return false; // 失敗
+    }
 }
     // --- Init ---
     function initUI() {
@@ -2175,18 +2164,54 @@ const nextSetModal = $('#nextSetConfirmModal');
     if ($('#downloadJsonButton')) {
         $('#downloadJsonButton').onclick = downloadFullDataJSON;
     }
-    const importInput = $('#importJsonInput');
-    if (importInput) {
-        importInput.addEventListener('change', importDataFromJSON);
+    // --- ここから修正・追加 ---
+    
+    // ★ 3. 既存のインポートボタンの処理を修正 ★
+    // (ボタンのIDが #importJsonButton ではない場合は、セレクタを修正してください)
+    const existingImportButton = $('#importJsonButton'); 
+    const importJsonModal = $('#importJsonModal');
+
+    if (existingImportButton && importJsonModal) {
+        // 「すでにあるインポートボタン」が押されたら、ファイル選択(click())ではなくモーダルを開く
+        existingImportButton.onclick = () => {
+            $('#importJsonTextarea').value = ''; // テキストエリアをクリア
+            importJsonModal.classList.remove('hidden'); // モーダルを表示
+            $('#importJsonTextarea').focus();
+        };
+    }
+    
+    // (もし #importJsonInput (type=file) があれば、それはもう不要です)
+    // const importInput = $('#importJsonInput');
+    // if (importInput) { ... } // ← このブロックは削除してOK
+    
+
+    // ★ 4. 新しいモーダル内のボタン処理を追加 ★
+    const executeImportBtn = $('#executeImportButton');
+    const importJsonModalClose = $('#importJsonModalClose');
+    
+    if (executeImportBtn && importJsonModalClose && importJsonModal) {
+    
+        // 「インポート実行」ボタンの処理
+        executeImportBtn.onclick = () => {
+            const jsonText = $('#importJsonTextarea').value;
+            if (!jsonText || jsonText.trim() === '') {
+                alert('JSONデータを貼り付けてください。');
+                $('#importJsonTextarea').focus();
+                return;
+            }
+            // 置き換えた importFromText 関数を呼び出す
+            const success = importFromText(jsonText);
+            
+            if (success) {
+                // インポート成功時のみモーダルを閉じる
+                importJsonModal.classList.add('hidden');
+            }
+        };
         
-        // (HTML側に <button id="importJsonButton">インポート</button> があると仮定)
-        const importButton = $('#importJsonButton');
-        if (importButton) {
-            importButton.onclick = () => {
-                importInput.value = null; // 毎回同じファイルを選択できるようにリセット
-                importInput.click(); // ボタンクリックでファイル選択ダイアログを開く
-            };
-        }
+        // 「キャンセル」ボタンの処理
+        importJsonModalClose.onclick = () => {
+            importJsonModal.classList.add('hidden');
+        };
     }
     if ($('#downloadCsvButton')) {
         $('#downloadCsvButton').onclick = downloadExportTableCSV;
