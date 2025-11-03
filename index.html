@@ -778,6 +778,25 @@
         </div>
     </div>
 </div>
+<div id="importJsonModal" class="modal hidden">
+    <div class="modal-content" style="width: 90%; max-width: 500px;">
+        <h3>JSONデータからインポート</h3>
+        <p style="font-size: 13px; color: #555; margin-bottom: 15px;">
+            エクスポートしたJSONファイルの中身をすべてコピーし、下の欄に貼り付けて「インポート実行」を押してください。
+        </p>
+        <textarea 
+            id="importJsonTextarea" 
+            rows="8" 
+            placeholder="ここにJSONデータを貼り付け..." 
+            style="width: 100%; font-size: 12px; margin-top: 5px;"></textarea>
+        <div class="modal-actions" style="margin-top: 15px;">
+            <button id="importJsonModalClose" class="btn-secondary">キャンセル</button>
+            <button id="executeImportButton" class="btn-primary" style="background-color: #2a66b9;">
+                インポート実行
+            </button>
+        </div>
+    </div>
+</div>
 
 <script>
     // --- Global Variables/Helpers ---
