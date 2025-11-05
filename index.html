@@ -369,7 +369,7 @@
 
   #exportTable {
     border-collapse: collapse;
-    font-size: 9px;
+    font-size: 8px;
     background: white;
     width: 100%;
     border: 1px solid #ddd;
@@ -381,7 +381,7 @@
     padding: 4px 3px;
     text-align: center;
     white-space: normal;
-    min-width: 20px;/*30pxから変更*/
+    min-width: 18px;/*30pxから変更*/
   }
 
   #exportTable th {
@@ -400,7 +400,7 @@
   /* ★修正(3): 選手名列 (背景色をth/td共に統一) */
   #exportTable td:first-child {
     text-align: center;
-    min-width: 40px; /*50pxから変更*/
+    min-width: 30px; /*50pxから変更*/
     position: sticky;
     left: 0;
     background-color: #f2f2f2; /* ★要望: th/td共に背景色を統一 */
@@ -569,7 +569,7 @@
 </style>
 </head>
 <body>
-  <div class="top-right">Safari推奨</div>
+  <div class="top-right"></div>
   <main>
     <section id="controls">
       <h1>バレースコア記録</h1>
@@ -629,12 +629,12 @@
       <h2>アクション記録</h2>
       <div class="action-buttons">
         <button class="action" data-action="サーブ" data-type="POINT_ACTION">サーブ</button>
-        <button class="action" data-action="スパイク" data-type="POINT_ACTION">スパイク</button>
-        <button class="action" data-action="ブロック" data-type="BLOCK">ブロック</button>
         <button class="action" data-action="レセ" data-type="SERVICE_RECEIVE">レセ</button>
-        <button class="action" data-action="チャンス" data-type="DIG_RECEIVE">チャンス</button>
+        <button class="action" data-action="スパイク" data-type="POINT_ACTION">スパイク</button>
         <button class="action" data-action="ディグ" data-type="DIG_RECEIVE">ディグ</button>
+        <button class="action" data-action="チャンス" data-type="DIG_RECEIVE">チャンス</button>
         <button class="action" data-action="二段トス" data-type="SET">二段トス</button>
+        <button class="action" data-action="ブロック" data-type="BLOCK">ブロック</button>
         <button id="otherLostPoint" class="action" data-action="その他失点">その他失点</button>
         <button id="otherPoint" class="action" data-action="その他得点">その他得点</button>
       </div>
@@ -824,7 +824,7 @@
     },
     BLOCK: {
       actions: ['ブロック'],
-      results: [{ v: 'シャット', p: true, e: false }, { v: 'ミス', p: false, e: true }, { v: 'その他', p: false, e: false }]
+      results: [{ v: 'シャット', p: true, e: false }, { v: 'その他', p: false, e: false }]
     },
     SERVICE_RECEIVE: {
       actions: ['レセ'],
@@ -1502,16 +1502,31 @@
             return { tallyData: [], actionResultsMap: {}, actionCategories: [] };
         }
         
-        const dets = [], resMap = {};
-        for (const k in ACTION_CONFIG) {
-            ACTION_CONFIG[k].actions.forEach(a => {
-                dets.push(a);
-                ACTION_CONFIG[k].results.forEach(r => {
-                    if (!resMap[a]) resMap[a] = new Set();
-                    resMap[a].add(r.v);
-                });
-            });
-        }
+        // ★修正: アクションの表示順序をここで定義
+        const orderedCategories = [
+            'サーブ',
+            'レセ',
+            'スパイク',
+            'ディグ',
+            'チャンス',
+            '二段トス',
+            'ブロック'
+        ];
+        
+        // ★修正: dets (詳細カテゴリリスト) を orderedCategories に変更
+        const dets = orderedCategories;
+        const resMap = {};
+
+        // ★修正: ACTION_CONFIG から resMap を作成する処理 (順序は問わない)
+        for (const k in ACTION_CONFIG) {
+            ACTION_CONFIG[k].actions.forEach(a => {
+                // resMap の作成
+                ACTION_CONFIG[k].results.forEach(r => {
+                    if (!resMap[a]) resMap[a] = new Set();
+                    resMap[a].add(r.v);
+                });
+            });
+        }
         
         const tally = new Map();
         state.allPlayers.forEach(p => {
@@ -1538,77 +1553,146 @@
             });
         });
         
-        return { tallyData: Array.from(tally.values()), actionResultsMap: resMap, actionCategories: dets };
-    }
+       // ★修正: actionCategories として orderedCategories を返す
+        return { tallyData: Array.from(tally.values()), actionResultsMap: resMap, actionCategories: orderedCategories };
+    }
+// ★新規追加: 成功率・効果率を計算するヘルパー関数
+    function calculateStats(actionData, actionName, opportunities) {
+        if (!actionData || opportunities === 0) {
+            return { successRate: '', effectRate: '' };
+        }
 
-    // ★ setIndex の値に応じて対象セットを決定し、集計表を作成
-    function buildExportTable(setIndex) {
-        const tab = $('#exportTable'),
-            { tallyData: data, actionResultsMap: resMap, actionCategories: cats } = tallyActionsByPlayer(setIndex);
-            
-        if (!cats.length) { tab.innerHTML = `<caption>集計</caption><tr><td>記録なし</td></tr>`; return; }
-        
-        let html = '<thead><tr><th rowspan="2">選手</th>', 
-            subH = '<tr>'; 
-            
-        cats.forEach(a => {
-            const res = Array.from(resMap[a] || []);
-            if (res.length) {
-                html += `<th colspan="${res.length + 1}">${escapeHtml(a)}</th>`; 
-                
-                subH += `<th class="opportunity-header">機会</th>`; 
-                
-                res.forEach((r, resIndex) => { 
-                    const isLastCellOfCategory = (resIndex === res.length - 1);
-                    const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
-                    subH += `<th class="${dividerClass}">${escapeHtml(r)}</th>`; 
-                });
-            }
-        });
-        html += `</tr>${subH}</tr></thead>`; 
-        html += '<tbody>';
-        
-        // 表示対象の選手リストを生成（全セットのログに登場した選手 + コート上の選手）
-        const actIds = new Set();
-        // 対象セットの決定を修正: tallyActionsByPlayer と同じロジック
-        const targetSets = setIndex === -1 ? state.matchSets : [state.matchSets[setIndex]].filter(s => s);
-        
-        targetSets.forEach(set => {
-            set.log.filter(e => e.playerId).map(e => actIds.add(e.playerId));
-        });
-        state.onCourtPlayerIds.forEach(id => actIds.add(id));
+        // actionData から必要なカウント数を取得 (存在しない場合は 0)
+        const getCount = (key) => actionData[key] || 0;
+        
+        const mistakes = getCount('ミス');
+        let successRate = 0;
+        let effectRate = 0;
 
-        let hasD = false;
-        
-        data.filter(pD => actIds.has(pD.id)).forEach(pD => {
-            hasD = true;
-            let row = `<tr><td>${escapeHtml(pD.name)}</td>`; 
-            
-            cats.forEach(a => {
-                const res = Array.from(resMap[a] || []);
-                
-                const opportunityCount = pD.actions[a] ? Object.values(pD.actions[a]).reduce((sum, count) => sum + (count || 0), 0) : 0;
-                
-                row += `<td class="opportunity-cell">${opportunityCount || ''}</td>`;
-                
-                res.forEach((r, resIndex) => {
-                    const cnt = pD.actions[a] ? (pD.actions[a][r] || 0) : 0;
-                    
-                    const isLastCellOfCategory = (resIndex === res.length - 1);
-                    const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
-                    
-                    row += `<td class="${dividerClass}">${cnt || ''}</td>`;
-                });
-            });
-            row += '</tr>';
-            html += row;
-        });
-        
-        html += '</tbody>';
-        if (!hasD) { tab.innerHTML = `<caption>集計</caption><tr><td>対象選手記録なし</td></tr>`; return; }
-        tab.innerHTML = html;
-    }
+        if (['サーブ', 'スパイク'].includes(actionName)) {
+            const points = getCount('得点');
+            // 成功率 = (機会 - ミス) / 機会
+            successRate = (opportunities - mistakes) / opportunities;
+            // 効果率 = (得点 - ミス) / 機会
+            effectRate = (points - mistakes) / opportunities;
 
+        } else if (['レセ', 'ディグ', 'チャンス'].includes(actionName)) {
+            const sOver = getCount('Sオーバー');
+            const sUnder = getCount('Sアンダー');
+            // 成功率 = (機会 - ミス) / 機会
+            successRate = (opportunities - mistakes) / opportunities;
+            // 効果率 = (Sオーバー + Sアンダー * 0.5 - ミス) / 機会
+            effectRate = (sOver + (sUnder * 0.5) - mistakes) / opportunities;
+        }
+
+        // %表示 (例: 0.5 -> 50.0%) にして小数点第一位まで
+        return {
+            successRate: (successRate * 100).toFixed(1) + '%',
+            effectRate: (effectRate * 100).toFixed(1) + '%'
+        };
+    }
+
+ // ★ setIndex の値に応じて対象セットを決定し、集計表を作成
+    function buildExportTable(setIndex) {
+        const tab = $('#exportTable'),
+            { tallyData: data, actionResultsMap: resMap, actionCategories: cats } = tallyActionsByPlayer(setIndex);
+            
+        if (!cats.length) { tab.innerHTML = `<caption>集計</caption><tr><td>記録なし</td></tr>`; return; }
+        
+        let html = '<thead><tr><th rowspan="2">選手</th>', 
+            subH = '<tr>'; 
+            
+        // --- ヘッダー行 (1行目: アクション名, 2行目: 結果) ---
+        cats.forEach(a => {
+            // ★修正: 'その他' を除外した結果リストを作成
+            const res = Array.from(resMap[a] || []).filter(r => r !== 'その他'); 
+            
+            // ★修正: 成功率・効果率の列を追加するための準備
+            const isStatTarget = !['ブロック', '二段トス'].includes(a);
+            const extraCols = isStatTarget ? 2 : 0; // 成功率・効果率の2列
+            
+            // (ブロック/二段トスは結果が 0 でも列自体は表示させる)
+            if (res.length > 0 || ['ブロック', '二段トス'].includes(a)) {
+                // ★修正: colspan に extraCols (成功率/効果率の2列) を追加
+                // (res.length + 1(機会) + extraCols)
+                html += `<th colspan="${res.length + 1 + extraCols}">${escapeHtml(a)}</th>`; 
+                
+                subH += `<th class="opportunity-header">機会</th>`; 
+                
+                // ★修正: 'その他' を除外したリストで結果ヘッダーをループ
+                res.forEach((r, resIndex) => { 
+                    // ★修正: 区切り線は、成功率計算対象でないカテゴリの最後のみ
+                    const isLastCellOfCategory = (resIndex === res.length - 1) && !isStatTarget;
+                    const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
+                    subH += `<th class="${dividerClass}">${escapeHtml(r)}</th>`; 
+                });
+
+                // ★修正: 成功率・効果率のヘッダーを追加
+                if (isStatTarget) {
+                    subH += `<th>成功率</th>`;
+                    // 効果率の列に区切り線（category-divider）を適用
+                    subH += `<th class="category-divider">効果率</th>`; 
+                }
+            }
+        });
+        html += `</tr>${subH}</tr></thead>`; 
+        html += '<tbody>';
+        
+        // --- 表示対象の選手リスト (ここは変更なし) ---
+        const actIds = new Set();
+        const targetSets = setIndex === -1 ? state.matchSets : [state.matchSets[setIndex]].filter(s => s);
+        targetSets.forEach(set => {
+            set.log.filter(e => e.playerId).map(e => actIds.add(e.playerId));
+        });
+        state.onCourtPlayerIds.forEach(id => actIds.add(id));
+        let hasD = false;
+        
+        // --- ボディ行 (データ) ---
+        data.filter(pD => actIds.has(pD.id)).forEach(pD => {
+            hasD = true;
+            let row = `<tr><td>${escapeHtml(pD.name)}</td>`; 
+            
+            cats.forEach(a => {
+                // ★修正: 'その他' を除外した結果リストを作成
+                const res = Array.from(resMap[a] || []).filter(r => r !== 'その他');
+                
+                // ★修正: 機会カウント (これは変更なし。'その他' も含む全アクション)
+                const opportunityCount = pD.actions[a] ? Object.values(pD.actions[a]).reduce((sum, count) => sum + (count || 0), 0) : 0;
+                
+                // (ブロック/二段トスは結果が 0 でも列自体は表示させる)
+                if (res.length > 0 || ['ブロック', '二段トス'].includes(a)) {
+                    row += `<td class="opportunity-cell">${opportunityCount || ''}</td>`;
+                    
+                    // ★修正: 'その他' を除外したリストでデータセルをループ
+                    res.forEach((r, resIndex) => {
+                        const cnt = pD.actions[a] ? (pD.actions[a][r] || 0) : 0;
+                        
+                        const isStatTarget = !['ブロック', '二段トス'].includes(a);
+                        const isLastCellOfCategory = (resIndex === res.length - 1) && !isStatTarget;
+                        const dividerClass = isLastCellOfCategory ? ' category-divider' : '';
+                        
+                        row += `<td class="${dividerClass}">${cnt || ''}</td>`;
+                    });
+                    
+                    // ★修正: 成功率・効果率の計算とセル追加
+                    const isStatTarget = !['ブロック', '二段トス'].includes(a);
+                    if (isStatTarget) {
+                        // 先ほど追加した calculateStats 関数を呼び出す
+                        const stats = calculateStats(pD.actions[a], a, opportunityCount);
+                        row += `<td>${stats.successRate}</td>`;
+                        // 効果率のセルに区切り線（category-divider）を適用
+                        row += `<td class="category-divider">${stats.effectRate}</td>`;
+                    }
+                }
+            });
+            row += '</tr>';
+            html += row;
+        });
+        
+        html += '</tbody>';
+        if (!hasD) { tab.innerHTML = `<caption>集計</caption><tr><td>対象選手記録なし</td></tr>`; return; }
+        tab.innerHTML = html;
+    }
     // ★ setIndex の値に応じて対象セットを決定し、グラフを作成
     function renderScoreGraph(setIndex) {
         const contContainer = $('#scoreGraphContainer');
@@ -1899,104 +1983,109 @@ function downloadFullDataJSON() {
         URL.revokeObjectURL(url); // メモリ解放
     }
 }
+/**
+ * 既存の downloadExportTableCSV 関数 (全体) を
+ * ↓ 以下の新しい内容に差し替えてください
+ */
+
 function downloadExportTableCSV() {
-    const table = document.getElementById('exportTable');
-    if (!table) {
-        alert('集計表が見つかりません。');
-        return;
-    }
+    const table = document.getElementById('exportTable');
+    if (!table) {
+        alert('集計表が見つかりません。');
+        return;
+    }
 
-    let csv = [];
-    
-    // 1. ヘッダー行を処理し、1行の統合ヘッダーを作成
-    const headerRows = table.querySelectorAll('thead tr');
-    
-    if (headerRows.length < 2) {
-        // ヘッダーが1行の場合（処理を簡略化）
-        const singleHeaderRow = [];
-        headerRows[0].querySelectorAll('th').forEach(th => {
-            let text = th.textContent.replace(/\s+/g, ' ').trim();
-            singleHeaderRow.push(`"${text}"`);
-        });
-        csv.push(singleHeaderRow.join(','));
-    } else {
-        // 多段ヘッダー（2行）の場合の処理
-        const mainActions = headerRows[0].querySelectorAll('th'); // サーブ, スパイク, ...
-        const subItems = headerRows[1].querySelectorAll('th'); // 機会, 得点, ミス, ...
-        
-        let combinedHeader = [];
-        let subItemIndex = 0;
+    let csv = [];
+    const headerRows = table.querySelectorAll('thead tr');
 
-        // 選手名の列（最初のth）を特別に追加
-        const playerHeader = mainActions[0] ? mainActions[0].textContent.replace(/\s+/g, ' ').trim() : '';
-        combinedHeader.push(`"${playerHeader}"`);
+    if (headerRows.length < 2) {
+        // (フォールバック: ヘッダーが1行しかない場合の処理)
+        console.warn("CSVエクスポート: 2行のヘッダーが見つかりませんでした。");
+        const rowData = [];
+        headerRows[0].querySelectorAll('th').forEach(th => {
+            let text = th.textContent.replace(/\s+/g, ' ').trim();
+            rowData.push(`"${text}"`);
+        });
+        csv.push(rowData.join(','));
+    } else {
+        // --- ★修正: ヘッダー1行目 (アクション名 + 空白) の作成 ---
+        const csvRow1 = [];
+        const mainActions = headerRows[0].querySelectorAll('th');
+        
+        mainActions.forEach((th, index) => {
+            const text = th.textContent.replace(/\s+/g, ' ').trim();
+            csvRow1.push(`"${text}"`); // アクション名 (または '選手') を追加
+            
+            if (index > 0) { // '選手' 列 (index 0) 以外
+                const colspan = parseInt(th.getAttribute('colspan') || '1');
+                // colspan の数だけ空白セルを追加 (1つはアクション名で埋めたので -1)
+                for (let j = 0; j < colspan - 1; j++) {
+                    csvRow1.push(''); // 空白セル
+                }
+            }
+        });
+        csv.push(csvRow1.join(','));
+        // ---------------------------------------------------------
 
-        // 2行目以降のメインアクション（サーブ、スパイクなど）を処理
-        // 最初のthは選手名なのでスキップ
-        for (let i = 1; i < mainActions.length; i++) {
-            const actionTh = mainActions[i];
-            const actionName = actionTh.textContent.replace(/\s+/g, ' ').trim();
-            // colspanを取得（結合セルの数）
-            const colspan = parseInt(actionTh.getAttribute('colspan') || '1'); 
+        // --- ★修正: ヘッダー2行目 (内訳) の作成 ---
+        const csvRow2 = [];
+        csvRow2.push(''); // 1列目 (選手列) は空白
+        
+        const subItems = headerRows[1].querySelectorAll('th');
+        subItems.forEach(th => {
+            const text = th.textContent.replace(/\s+/g, ' ').trim();
+            csvRow2.push(`"${text}"`);
+        });
+        csv.push(csvRow2.join(','));
+        // ---------------------------------------------------------
+    }
 
-            // colspanの数だけ、対応する2行目のサブアイテムと結合
-            for (let j = 0; j < colspan; j++) {
-                const subItemTh = subItems[subItemIndex];
-                if (subItemTh) {
-                    const subItemName = subItemTh.textContent.replace(/\s+/g, ' ').trim();
-                    // アクション名 + サブ項目名で新しいヘッダーを作成
-                    combinedHeader.push(`"${actionName} ${subItemName}"`);
-                }
-                subItemIndex++;
-            }
-        }
-        csv.push(combinedHeader.join(','));
-    }
+    // --- 2. ボディ（データ）行の抽出 (ここは変更なし) ---
+    const dataRows = table.querySelectorAll('tbody tr');
+    dataRows.forEach(row => {
+        const rowData = [];
+        row.querySelectorAll('td').forEach(td => {
+            let text = td.textContent.replace(/\s+/g, ' ').trim();
+            // 数値や%でない限り、念のためダブルクォートで囲む
+            // (選手名が "A, B" のようにならない前提だが、安全のため囲む)
+            rowData.push(`"${text}"`);
+        });
+        csv.push(rowData.join(','));
+    });
+    // --------------------------------------------------
 
-    // --- 2. ボディ（データ）行の抽出 (ここは変更なし) ---
-    const dataRows = table.querySelectorAll('tbody tr');
-    dataRows.forEach(row => {
-        const rowData = [];
-        row.querySelectorAll('td').forEach(td => {
-            let text = td.textContent.replace(/\s+/g, ' ').trim();
-            rowData.push(`"${text}"`);
-        });
-        csv.push(rowData.join(','));
-    });
-    // --------------------------------------------------
+    const csvString = csv.join('\n');
 
-    const csvString = csv.join('\n');
+    // --- 3. ファイル名とBlobの準備 (ここは変更なし) ---
+    const dateStr = getFormattedDate(state.matchDate).replace(/[^0-9]/g, '');
+    const opponent = (state.opponentName || 'opponent').replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '_');
+    
+    // 現在表示中のセットをファイル名に含める
+    const setLabel = exportViewingSetIndex === -1 ? 'AllSets' : `Set${state.matchSets[exportViewingSetIndex]?.setNumber || 'Unknown'}`;
+    
+    const filename = `VolleyStats_${setLabel}_${dateStr}_vs_${opponent}.csv`;
 
-    // 3. ファイル名とBlobの準備 (変更なし)
-    const dateStr = getFormattedDate(state.matchDate).replace(/[^0-9]/g, '');
-    const opponent = state.opponentName.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '_');
-    
-    // 現在表示中のセットをファイル名に含める
-    const setLabel = exportViewingSetIndex === -1 ? 'AllSets' : `Set${state.matchSets[exportViewingSetIndex]?.setNumber || 'Unknown'}`;
-    
-    const filename = `VolleyStats_${setLabel}_${dateStr}_vs_${opponent}.csv`;
+    // CSVの文字化けを防ぐためBOM（Byte Order Mark）を付与
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
+    const blob = new Blob([bom, csvString], { type: 'text/csv;charset=utf-8;' });
 
-    // CSVの文字化けを防ぐためBOM（Byte Order Mark）を付与
-    const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
-    const blob = new Blob([bom, csvString], { type: 'text/csv;charset=utf-8;' });
+    // --- 4. ダウンロード処理を実行 (ここは変更なし) ---
+    if (navigator.msSaveBlob) {
+        navigator.msSaveBlob(blob, filename);
+    } else {
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
 
-    // 4. ダウンロード処理を実行 (変更なし)
-    if (navigator.msSaveBlob) {
-        navigator.msSaveBlob(blob, filename);
-    } else {
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', filename);
-        link.style.visibility = 'hidden';
-
-        document.body.appendChild(link);
-        link.click();
-        
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    }
+        document.body.appendChild(link);
+        link.click();
+        
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
 }
 /**
  * ★ 2. importDataFromJSON をこの関数に置き換え ★
@@ -2166,53 +2255,70 @@ const nextSetModal = $('#nextSetConfirmModal');
     }
     // --- ここから修正・追加 ---
     
-    // ★ 3. 既存のインポートボタンの処理を修正 ★
-    // (ボタンのIDが #importJsonButton ではない場合は、セレクタを修正してください)
-    const existingImportButton = $('#importJsonButton'); 
-    const importJsonModal = $('#importJsonModal');
+   // ★ 3. 既存のインポートボタンの処理を修正 ★
+    const existingImportButton = $('#importJsonButton'); 
+    const importJsonModal = $('#importJsonModal'); // (この行は削除してもOK)
+    const fileInput = $('#jsonFileInput'); // ★File inputを取得
 
-    if (existingImportButton && importJsonModal) {
-        // 「すでにあるインポートボタン」が押されたら、ファイル選択(click())ではなくモーダルを開く
+    if (existingImportButton && fileInput) { // ★importJsonModal から fileInput に変更
+        // 「インポート(JSON)」ボタンが押されたら、ファイル選択ダイアログを開く
         existingImportButton.onclick = () => {
-            $('#importJsonTextarea').value = ''; // テキストエリアをクリア
-            importJsonModal.classList.remove('hidden'); // モーダルを表示
-            $('#importJsonTextarea').focus();
+            fileInput.value = null; // 同じファイルを選び直せるようにリセット
+            fileInput.click(); // 非表示の<input type="file">をクリックさせる
         };
-    }
-    
+    } 
+// ★新規追加: ファイルが選択されたときの処理 (initUI内に追加)
+    if (fileInput) {
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) {
+                return; // ファイルが選択されなかった
+             }
+            
+            // FileReaderを使ってファイル内容を読み込む
+            const reader = new FileReader();
+            
+          // ----------------------------------------------------
+            // ★★★ ここからが前回途切れた部分です ★★★
+            // ----------------------------------------------------
+            
+            // 読み込みが完了したら
+            reader.onload = (e) => {
+                const jsonText = e.target.result;
+                if (!jsonText) {
+                    alert('ファイルが空か、読み込みに失敗しました。');
+                    return;
+                }
+                
+                // 以前のコピペ用モーダルで使っていた importFromText 関数を呼び出す
+                try {
+                    // importFromText は 成功/失敗 を true/false で返す
+                    const success = importFromText(jsonText);
+                    
+                    if (!success) {
+                        // importFromText 側で alert が出るはずだが、念のため
+                        console.error("インポートに失敗しました (importFromText より false)");
+                    }
+                } catch (error) {
+                    console.error("インポート処理中にエラー:", error);
+                    alert('インポート処理中に予期せぬエラーが発生しました。');
+                }
+            };
+            
+            // 読み込みエラーが発生したら
+            reader.onerror = () => {
+                alert('ファイルの読み込み中にエラーが発生しました。');
+            };
+
+            // ファイルをテキストとして読み込む
+            reader.readAsText(file);
+        });
+    }   
     // (もし #importJsonInput (type=file) があれば、それはもう不要です)
     // const importInput = $('#importJsonInput');
     // if (importInput) { ... } // ← このブロックは削除してOK
     
 
-    // ★ 4. 新しいモーダル内のボタン処理を追加 ★
-    const executeImportBtn = $('#executeImportButton');
-    const importJsonModalClose = $('#importJsonModalClose');
-    
-    if (executeImportBtn && importJsonModalClose && importJsonModal) {
-    
-        // 「インポート実行」ボタンの処理
-        executeImportBtn.onclick = () => {
-            const jsonText = $('#importJsonTextarea').value;
-            if (!jsonText || jsonText.trim() === '') {
-                alert('JSONデータを貼り付けてください。');
-                $('#importJsonTextarea').focus();
-                return;
-            }
-            // 置き換えた importFromText 関数を呼び出す
-            const success = importFromText(jsonText);
-            
-            if (success) {
-                // インポート成功時のみモーダルを閉じる
-                importJsonModal.classList.add('hidden');
-            }
-        };
-        
-        // 「キャンセル」ボタンの処理
-        importJsonModalClose.onclick = () => {
-            importJsonModal.classList.add('hidden');
-        };
-    }
     if ($('#downloadCsvButton')) {
         $('#downloadCsvButton').onclick = downloadExportTableCSV;
     }
@@ -2439,6 +2545,5 @@ const nextSetModal = $('#nextSetConfirmModal');
 
 
 </script>
-
 </body>
 </html>
