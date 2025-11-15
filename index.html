@@ -593,6 +593,7 @@
 <button id="importJsonButton">インポート(JSON)</button>
         <button id="newGame">新しい試合</button>
         <button id="showExportScreen">集計</button>
+        <button id="installPwaButton" style="display: none; background: #d1eaff; border-color: #a6d4ff; font-weight: bold;">アプリをインストール</button>
       </div>
     </section>
     <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
@@ -815,6 +816,7 @@
     // --- Global Variables/Helpers ---
     const $ = s => document.querySelector(s);
     const $$ = s => document.querySelectorAll(s);
+    let deferredPrompt; // PWAインストールプロンプトを保持する変数
     let currentMemoAction = null;
     let currentSubSlotIndex = null;
     let nextPlayerId = 1;
@@ -2181,6 +2183,53 @@ function importFromText(jsonText) {
               });
           });
         }
+      const installButton = $('#installPwaButton');
+      // ブラウザがインストール準備完了を通知したとき
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // ブラウザ標準のインストールUI（ミニインフォバー）を無効にする
+            e.preventDefault();
+            // イベント（プロンプトを出す機能）を保持する
+            deferredPrompt = e;
+            // インストールボタンを表示する
+            if (installButton) {
+                installButton.style.display = 'block';
+            }
+        });
+
+        // 自分で設置したインストールボタンがクリックされたとき
+        if (installButton) {
+            installButton.onclick = (e) => {
+                if (!deferredPrompt) {
+                    // プロンプトがない場合は何もしない
+                    return;
+                }
+                // インストールプロンプト（「ホーム画面に追加しますか？」）を表示
+                deferredPrompt.prompt();
+
+                // ユーザーの選択結果を待つ
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the A2HS prompt');
+                        // インストールされたらボタンを非表示にする
+                        installButton.style.display = 'none';
+                    } else {
+                        console.log('User dismissed the A2HS prompt');
+                    }
+                    // プロンプトは一度しか使えないので、変数をクリアする
+                    deferredPrompt = null;
+                });
+            };
+        }
+
+        // アプリが正常にインストールされたら
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('appinstalled fired');
+            // ボタンを非表示にし、プロンプト変数もクリア
+            if (installButton) {
+                installButton.style.display = 'none';
+            }
+            deferredPrompt = null;
+        });
         load();
 
         const libSel = $('#liberoStatus');
