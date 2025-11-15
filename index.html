@@ -593,7 +593,7 @@
 <button id="importJsonButton">インポート(JSON)</button>
         <button id="newGame">新しい試合</button>
         <button id="showExportScreen">集計</button>
-        <button id="installPwaButton" style="display: none; background: #d1eaff; border-color: #a6d4ff; font-weight: bold;">アプリをインストール</button>
+        <button id="installPwaButton"  background: #d1eaff; border-color: #a6d4ff; font-weight: bold;">アプリをインストール</button>
       </div>
     </section>
     <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
@@ -2183,15 +2183,17 @@ function importFromText(jsonText) {
               });
           });
         }
-      const installButton = $('#installPwaButton');
-      // ブラウザがインストール準備完了を通知したとき
+      // ★★★ PWAインストールボタン処理: ここから追加 ★★★
+        const installButton = $('#installPwaButton');
+
+        // ブラウザがインストール準備完了を通知したとき
         window.addEventListener('beforeinstallprompt', (e) => {
-            // ブラウザ標準のインストールUI（ミニインフォバー）を無効にする
+            // ブラウザ標準のUIは無効にする
             e.preventDefault();
             // イベント（プロンプトを出す機能）を保持する
             deferredPrompt = e;
-            // インストールボタンを表示する
-            if (installButton) {
+            // ★修正: ボタンが非表示なら（インストール完了後など）表示する
+            if (installButton && installButton.style.display === 'none') {
                 installButton.style.display = 'block';
             }
         });
@@ -2199,25 +2201,34 @@ function importFromText(jsonText) {
         // 自分で設置したインストールボタンがクリックされたとき
         if (installButton) {
             installButton.onclick = (e) => {
-                if (!deferredPrompt) {
-                    // プロンプトがない場合は何もしない
-                    return;
-                }
-                // インストールプロンプト（「ホーム画面に追加しますか？」）を表示
-                deferredPrompt.prompt();
+                if (deferredPrompt) {
+                    // --- (A) インストール準備OK（deferredPromptあり）の場合 ---
+                    // インストールプロンプト（「ホーム画面に追加しますか？」）を表示
+                    deferredPrompt.prompt();
 
-                // ユーザーの選択結果を待つ
-                deferredPrompt.userChoice.then((choiceResult) => {
-                    if (choiceResult.outcome === 'accepted') {
-                        console.log('User accepted the A2HS prompt');
-                        // インストールされたらボタンを非表示にする
-                        installButton.style.display = 'none';
-                    } else {
-                        console.log('User dismissed the A2HS prompt');
-                    }
-                    // プロンプトは一度しか使えないので、変数をクリアする
-                    deferredPrompt = null;
-                });
+                    // ユーザーの選択結果を待つ
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('User accepted the A2HS prompt');
+                            // インストールされたらボタンを非表示にする
+                            installButton.style.display = 'none';
+                        } else {
+                            console.log('User dismissed the A2HS prompt');
+                        }
+                        // プロンプトは一度しか使えないので、変数をクリアする
+                        deferredPrompt = null;
+                    });
+                } else {
+                    // --- (B) インストール準備NG（deferredPromptなし）の場合 ---
+                    // ユーザーに手動でのインストール方法を案内するアラート
+                    alert(
+                        '【アプリのインストール手順】\n\n' +
+                        '● iPhone (Safari) の場合:\n' +
+                        '画面下の「共有」ボタンをタップし、「ホーム画面に追加」を選んでください。\n\n' +
+*                     '● Android (Chrome) の場合:\n' +
+                        '右上の「︙」メニューをタップし、「アプリをインストール」または「ホーム画面に追加」を選んでください。'
+                    );
+                }
             };
         }
 
@@ -2230,6 +2241,7 @@ function importFromText(jsonText) {
             }
             deferredPrompt = null;
         });
+        // ★★★ PWAインストールボタン処理: ここまで ★★★
         load();
 
         const libSel = $('#liberoStatus');
