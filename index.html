@@ -4,6 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>バレースコア記録</title>
+
+<meta name="theme-color" content="#f6f7fb" />
+<link rel="manifest" href="manifest.json" />
+
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="バレスコ" />
 <style>
   html,
   body {
@@ -836,7 +843,7 @@
     },
     SET: {
       actions: ['二段トス'],
-      results: [{ v: '打つ', p: false, e: false }, { v: 'トス', p: false, e: false }, { v: 'ミス', p: false, e: true }, { v: 'その他', p: false, e: false }]
+      results: [{ v: '打つ', p: false, e: false }, { v: 'ミス', p: false, e: true }, { v: 'その他', p: false, e: false }]
     }
   };
 
@@ -2161,6 +2168,19 @@ function importFromText(jsonText) {
 }
     // --- Init ---
     function initUI() {
+
+      if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            // sw.js を登録
+            navigator.serviceWorker.register('/sw.js')
+              .then(registration => {
+                console.log('ServiceWorker registration successful: ', registration.scope);
+              })
+              .catch(err => {
+                console.log('ServiceWorker registration failed: ', err);
+              });
+          });
+        }
         load();
 
         const libSel = $('#liberoStatus');
